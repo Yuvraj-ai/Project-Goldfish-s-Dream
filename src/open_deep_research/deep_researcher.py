@@ -18,13 +18,13 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
-from open_deep_research.exceptions import (
-    ToolTransientError,
-    ToolPermanentError,
-    ModelError,
-)
 from open_deep_research.configuration import (
     Configuration,
+)
+from open_deep_research.exceptions import (
+    ModelError,
+    ToolPermanentError,
+    ToolTransientError,
 )
 from open_deep_research.prompts import (
     clarify_with_user_instructions,
