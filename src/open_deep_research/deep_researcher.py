@@ -1,7 +1,17 @@
 """Main LangGraph implementation for the Deep Research agent."""
 
 import asyncio
+import logging
+import traceback
 from typing import Literal
+
+from open_deep_research.exceptions import (
+    ToolTransientError,
+    ToolPermanentError,
+    ModelError,
+)
+
+logger = logging.getLogger(__name__)
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import (
@@ -330,16 +340,33 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> Co
                 update_payload["raw_notes"] = [raw_notes_concat]
                 
         except Exception as e:
-            # Handle research execution errors
-            if is_token_limit_exceeded(e, configurable.research_model) or True:
-                # Token limit exceeded or other error - end research phase
-                return Command(
-                    goto=END,
-                    update={
-                        "notes": get_notes_from_tool_calls(supervisor_messages),
-                        "research_brief": state.get("research_brief", "")
+            # Handle research execution errors with specific types
+            error_msg = f"Research error: {type(e).__name__}: {e}"
+            error_type = type(e).__name__
+            
+            if is_token_limit_exceeded(e, configurable.research_model):
+                error_type = "TokenLimitError"
+                error_msg = f"Token limit exceeded: {e}"
+            elif isinstance(e, ToolTransientError):
+                # Retryable — log and re-raise
+                logger.warning(f"Transient tool error (retryable): {e}")
+                raise
+            elif isinstance(e, (ToolPermanentError, ModelError)):
+                error_msg = f"Tool/model failure: {e}"
+            
+            return Command(
+                goto=END,
+                update={
+                    "notes": get_notes_from_tool_calls(supervisor_messages),
+                    "research_brief": state.get("research_brief", ""),
+                    "error_artifact": {
+                        "node": "supervisor_tools",
+                        "error_type": error_type,
+                        "error_message": error_msg,
+                        "stack_trace": traceback.format_exc(),
                     }
-                )
+                }
+            )
     
     # Step 3: Return command with all tool results
     update_payload["supervisor_messages"] = all_tool_messages
