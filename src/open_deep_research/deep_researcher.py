@@ -26,6 +26,12 @@ from open_deep_research.exceptions import (
     ToolPermanentError,
     ToolTransientError,
 )
+from open_deep_research.evidence import (
+    extract_evidence,
+    deduplicate_claims,
+    detect_conflicts,
+    compress_evidence,
+)
 from open_deep_research.prompts import (
     clarify_with_user_instructions,
     compress_research_simple_human_message,
@@ -533,6 +539,47 @@ async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> Co
         goto="researcher",
         update={"researcher_messages": tool_outputs}
     )
+
+async def extract_structured_evidence(state: ResearcherState, config: RunnableConfig):
+    """Extract structured evidence cards from researcher outputs.
+
+    This node runs when enable_evidence_first is True, extracting structured
+    EvidenceCards from raw research findings. When disabled, falls back to
+    legacy flat-text compression.
+    """
+    configurable = Configuration.from_runnable_config(config)
+
+    if not configurable.enable_evidence_first:
+        # Legacy path: skip to flat compression
+        return {}
+
+    raw_notes = state.get("raw_notes", [])
+    all_text = "\n".join(raw_notes) if raw_notes else ""
+
+    if not all_text:
+        return {}
+
+    cards, sources = extract_evidence(
+        raw_results=[{"content": all_text, "url": "", "title": "Research Output"}],
+        subquestion_id="main",
+        researcher_id="supervisor",
+    )
+
+    # Deduplicate
+    unique_cards, _ = deduplicate_claims(cards)
+
+    # Detect conflicts
+    conflicts = detect_conflicts(unique_cards)
+
+    # Compress
+    compressed = compress_evidence(unique_cards)
+
+    return {
+        "evidence_cards": [card.model_dump() for card in compressed],
+        "sources": [src.model_dump() for src in sources],
+        "conflicts": [conf.model_dump() for conf in conflicts],
+    }
+
 
 async def compress_research(state: ResearcherState, config: RunnableConfig):
     """Compress and synthesize research findings into a concise, structured summary.
