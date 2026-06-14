@@ -16,7 +16,6 @@ from langgraph.graph import MessagesState
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
-
 # ──────────────────────────────────────────────
 # Structured Outputs (existing — unchanged)
 # ──────────────────────────────────────────────
@@ -196,9 +195,9 @@ class AgentState(MessagesState):
     # Evidence-first fields (additive, backward-compatible)
     sources: Annotated[List[dict], merge_sources] = []
     evidence_cards: Annotated[List[dict], append_evidence] = []
-    conflicts: List[dict] = []
+    conflicts: List[dict] = []  # NOTE: no reducer — overwritten on update (add reducer when multi-node writes needed)
     citation_checks: Annotated[List[dict], operator.add] = []
-    review_results: List[dict] = []
+    review_results: List[dict] = []  # NOTE: no reducer — overwritten on update (add reducer when multi-node writes needed)
     telemetry: dict = {}
     total_tokens: int = 0
 
@@ -216,7 +215,7 @@ class SupervisorState(TypedDict):
     # Evidence-first fields (additive, backward-compatible)
     sources: Annotated[List[dict], merge_sources] = []
     evidence_cards: Annotated[List[dict], append_evidence] = []
-    conflicts: List[dict] = []
+    conflicts: List[dict] = []  # NOTE: no reducer — overwritten on update (add reducer when multi-node writes needed)
     total_tokens: int = 0
 
 
