@@ -70,6 +70,7 @@ class AgentState(MessagesState):
     raw_notes: Annotated[list[str], override_reducer] = []
     notes: Annotated[list[str], override_reducer] = []
     final_report: str
+    error_artifact: Optional[dict] = None
 
 class SupervisorState(TypedDict):
     """State for the supervisor that manages research tasks."""
@@ -79,6 +80,7 @@ class SupervisorState(TypedDict):
     notes: Annotated[list[str], override_reducer] = []
     research_iterations: int = 0
     raw_notes: Annotated[list[str], override_reducer] = []
+    error_artifact: Optional[dict] = None
 
 class ResearcherState(TypedDict):
     """State for individual researchers conducting research."""

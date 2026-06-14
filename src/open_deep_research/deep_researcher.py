@@ -5,14 +5,6 @@ import logging
 import traceback
 from typing import Literal
 
-from open_deep_research.exceptions import (
-    ToolTransientError,
-    ToolPermanentError,
-    ModelError,
-)
-
-logger = logging.getLogger(__name__)
-
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import (
     AIMessage,
@@ -26,6 +18,11 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
+from open_deep_research.exceptions import (
+    ToolTransientError,
+    ToolPermanentError,
+    ModelError,
+)
 from open_deep_research.configuration import (
     Configuration,
 )
@@ -61,6 +58,8 @@ from open_deep_research.utils import (
     remove_up_to_last_ai_message,
     think_tool,
 )
+
+logger = logging.getLogger(__name__)
 
 # Initialize a configurable model that we will use throughout the agent
 configurable_model = init_chat_model(
