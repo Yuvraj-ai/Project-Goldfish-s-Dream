@@ -1,0 +1,132 @@
+[
+  {
+    "id": "comp_001",
+    "mode": "comparison",
+    "query": "Compare React and Vue.js for building enterprise dashboards in 2026",
+    "reference_answer": "Both React and Vue.js are viable for enterprise dashboards. React has larger ecosystem and job market. Vue offers gentler learning curve and better TypeScript integration out of the box. For enterprise: React wins on ecosystem size, Vue wins on developer velocity for small teams.",
+    "rubric_anchors": {
+      "completeness": "Covers ecosystem, learning curve, TypeScript, team size considerations",
+      "citation_accuracy": "References official docs, State of JS survey, real benchmarks",
+      "source_diversity": "Uses framework docs, benchmark sites, developer surveys",
+      "structure": "Clear comparison format with sections per dimension",
+      "temporal_relevance": "Cites 2025-2026 data, not pre-2023 info"
+    }
+  },
+  {
+    "id": "comp_002",
+    "mode": "comparison",
+    "query": "Compare PostgreSQL and MongoDB for a high-throughput logging system",
+    "reference_answer": "PostgreSQL excels at structured data with ACID compliance. MongoDB handles unstructured logs better with horizontal scaling. For high-throughput logging: MongoDB's document model and sharding are advantages, but PostgreSQL with TimescaleDB extension is competitive for time-series. Decision depends on query patterns.",
+    "rubric_anchors": {
+      "completeness": "Covers data model, scaling, performance, extensions",
+      "citation_accuracy": "References official docs, benchmark studies",
+      "source_diversity": "Database docs, performance benchmarks, architecture blogs",
+      "structure": "Structured comparison with clear recommendation",
+      "temporal_relevance": "Recent performance data"
+    }
+  },
+  {
+    "id": "acad_001",
+    "mode": "academic_literature_review",
+    "query": "What are the latest advances in retrieval-augmented generation (RAG) since 2024?",
+    "reference_answer": "Recent RAG advances include: self-RAG (adaptive retrieval), CRAG (corrective RAG), graph-RAG (knowledge graph integration), multimodal RAG, and agentic RAG patterns. Key papers: Asai et al. 2024 on self-RAG, Yan et al. 2024 on CRAG, Edge et al. 2024 on graph-RAG.",
+    "rubric_anchors": {
+      "completeness": "Covers 5+ major RAG variants with paper citations",
+      "citation_accuracy": "arXiv IDs, author names, publication dates correct",
+      "source_diversity": "arXiv papers, Semantic Scholar, review articles",
+      "structure": "Chronological or thematic organization",
+      "temporal_relevance": "Focus on 2024-2026 publications"
+    }
+  },
+  {
+    "id": "acad_002",
+    "mode": "academic_literature_review",
+    "query": "Survey the research on prompt engineering techniques for improving LLM reasoning",
+    "reference_answer": "Key techniques: chain-of-thought (Wei et al. 2022), tree-of-thought (Yao et al. 2023), self-consistency (Wang et al. 2023), ReAct (Yao et al. 2023), and more recent prompt optimization methods like DSPy. Meta-prompting and automatic prompt engineering are emerging directions.",
+    "rubric_anchors": {
+      "completeness": "Covers major prompting techniques with papers",
+      "citation_accuracy": "Correct paper titles, authors, years",
+      "source_diversity": "Academic papers, survey articles",
+      "structure": "Technique-by-technique survey format",
+      "temporal_relevance": "Includes 2024-2025 developments"
+    }
+  },
+  {
+    "id": "news_001",
+    "mode": "news_or_current_events",
+    "query": "What are the major AI regulation developments in the EU and US in 2026?",
+    "reference_answer": "EU AI Act enforcement began in 2025 with phased compliance. US has state-level AI bills and federal executive orders. Key topics: foundation model requirements, high-risk AI classification, deepfake regulations, and international AI governance frameworks.",
+    "rubric_anchors": {
+      "completeness": "Covers EU AI Act phases, US federal and state actions",
+      "citation_accuracy": "References actual legislation, government sources",
+      "source_diversity": "Government sites, news outlets, legal analyses",
+      "structure": "Geographic or chronological organization",
+      "temporal_relevance": "2026 developments, not pre-2025 info"
+    }
+  },
+  {
+    "id": "news_002",
+    "mode": "news_or_current_events",
+    "query": "What are the current trends in cloud computing costs and provider pricing in 2026?",
+    "reference_answer": "Trends include: spot instance adoption, serverless cost optimization, multi-cloud strategies, FinOps practices, and AI-driven cost management. Major providers continue price competition especially in AI/ML compute.",
+    "rubric_anchors": {
+      "completeness": "Covers pricing trends, optimization strategies, provider comparison",
+      "citation_accuracy": "References provider pricing pages, industry reports",
+      "source_diversity": "Cloud provider sites, FinOps reports, analyst firms",
+      "structure": "Clear trend categories with evidence",
+      "temporal_relevance": "2026 pricing data"
+    }
+  },
+  {
+    "id": "tech_001",
+    "mode": "technical_implementation",
+    "query": "How do I implement real-time streaming with WebSockets in a FastAPI application?",
+    "reference_answer": "FastAPI supports WebSockets via WebSocket class. Implementation: define WebSocket endpoint, handle connection lifecycle, use async for concurrent connections, implement heartbeat for connection health. For production: add authentication, connection pooling, and message serialization.",
+    "rubric_anchors": {
+      "completeness": "Covers setup, lifecycle, auth, production concerns",
+      "citation_accuracy": "References FastAPI official docs",
+      "source_diversity": "Official docs, tutorials, GitHub examples",
+      "structure": "Step-by-step implementation guide",
+      "temporal_relevance": "Current FastAPI version"
+    }
+  },
+  {
+    "id": "tech_002",
+    "mode": "technical_implementation",
+    "query": "What is the best approach to implement rate limiting in a Python async web application?",
+    "reference_answer": "Options include: token bucket (flexible), sliding window (accurate), fixed window (simple). Libraries: slowapi (FastAPI), aiolimiter (async). For distributed: Redis-backed implementations. Consider: per-user vs per-endpoint limits, graceful degradation.",
+    "rubric_anchors": {
+      "completeness": "Covers algorithms, libraries, distributed approaches",
+      "citation_accuracy": "References actual libraries with versions",
+      "source_diversity": "Library docs, architecture articles, GitHub repos",
+      "structure": "Algorithm comparison then implementation",
+      "temporal_relevance": "Current library versions"
+    }
+  },
+  {
+    "id": "fact_001",
+    "mode": "validation_or_fact_check",
+    "query": "Is it true that Python 3.12 removed the GIL?",
+    "reference_answer": "No, Python 3.12 did not remove the GIL. PEP 703 (making the GIL optional) was accepted for Python 3.13+ as an experimental feature. Python 3.12 introduced performance improvements but the GIL remains. Free-threaded Python is experimental in 3.13.",
+    "rubric_anchors": {
+      "completeness": "Clarifies what actually happened vs the claim",
+      "citation_accuracy": "References PEP 703, Python release notes",
+      "source_diversity": "Python.org docs, PEP repository, release notes",
+      "structure": "Direct answer then explanation",
+      "temporal_relevance": "Correct Python version references"
+    }
+  },
+  {
+    "id": "fact_002",
+    "mode": "validation_or_fact_check",
+    "query": "Verify: Docker containers are always lighter than virtual machines",
+    "reference_answer": "Not always. Docker containers share the host OS kernel, making them generally lighter than full VMs. However, containers can grow large with many dependencies. VMs provide stronger isolation. The comparison depends on workload: containers are lighter for most web apps, but VMs may be appropriate for different OS requirements or strong isolation needs.",
+    "rubric_anchors": {
+      "completeness": "Nuanced answer with when true and when false",
+      "citation_accuracy": "References Docker documentation, VM comparison studies",
+      "source_diversity": "Docker docs, container comparison articles",
+      "structure": "Claim evaluation with evidence",
+      "temporal_relevance": "Current container technology"
+    }
+  }
+]
