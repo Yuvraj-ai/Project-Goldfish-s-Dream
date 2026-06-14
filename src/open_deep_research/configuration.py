@@ -231,7 +231,38 @@ class Configuration(BaseModel):
             }
         }
     )
-
+    # Feature Flags
+    enable_evidence_first: bool = Field(
+        default=False,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": False,
+                "description": "Enable evidence-first architecture with structured EvidenceCards. When disabled, falls back to flat text compression."
+            }
+        }
+    )
+    # Budget Configuration
+    max_total_tokens: int = Field(
+        default=500000,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "number",
+                "default": 500000,
+                "description": "Maximum total tokens allowed per research session (0 = unlimited)"
+            }
+        }
+    )
+    max_cost_usd: float = Field(
+        default=5.0,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "number",
+                "default": 5.0,
+                "description": "Maximum cost in USD allowed per research session (0 = unlimited)"
+            }
+        }
+    )
 
     @classmethod
     def from_runnable_config(
