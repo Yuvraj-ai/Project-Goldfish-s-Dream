@@ -1,10 +1,11 @@
 """Token/cost tracking, budget enforcement, and LangSmith integration."""
 from __future__ import annotations
-import time
-from typing import Dict, Any
-from dataclasses import dataclass, field
-from open_deep_research.exceptions import BudgetExceededError
 
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict
+
+from open_deep_research.exceptions import BudgetExceededError
 
 # Pricing per 1M tokens (USD) — as of 2026
 PRICING_TABLE = {

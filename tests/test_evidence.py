@@ -1,19 +1,17 @@
 """Tests for evidence extraction engine."""
-import pytest
 from datetime import datetime, timedelta
 
 from open_deep_research.evidence import (
-    compute_source_credibility,
-    compute_corroboration_strength,
+    _claims_conflict,
+    _claims_similar,
+    compress_evidence,
     compute_recency_score,
-    extract_evidence,
+    compute_source_credibility,
     deduplicate_claims,
     detect_conflicts,
-    compress_evidence,
-    _claims_similar,
-    _claims_conflict,
+    extract_evidence,
 )
-from open_deep_research.state import Source, EvidenceCard
+from open_deep_research.state import EvidenceCard, Source
 
 
 class TestSourceCredibility:

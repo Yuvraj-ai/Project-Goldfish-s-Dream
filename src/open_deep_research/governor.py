@@ -1,10 +1,11 @@
 """Concurrency and rate-limit governor for API providers."""
 from __future__ import annotations
+
 import asyncio
 import time
-from typing import Dict, Optional
-from dataclasses import dataclass, field
 from collections import deque
+from dataclasses import dataclass, field
+from typing import Dict
 
 
 @dataclass
@@ -42,7 +43,7 @@ PROVIDER_CONFIGS = {
 
 
 class ConcurrencyGovernor:
-    _instance: Optional["ConcurrencyGovernor"] = None
+    _instance: ConcurrencyGovernor | None = None
 
     def __new__(cls):
         if cls._instance is None:

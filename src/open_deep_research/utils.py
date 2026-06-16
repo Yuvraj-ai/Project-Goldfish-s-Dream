@@ -1,11 +1,13 @@
 """Utility functions and helpers for the Deep Research agent."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
 import warnings
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal
 
 import aiohttp
 from langchain.chat_models import init_chat_model
@@ -32,6 +34,8 @@ from tavily import AsyncTavilyClient
 from open_deep_research.configuration import Configuration, SearchAPI
 from open_deep_research.prompts import summarize_webpage_prompt
 from open_deep_research.state import ResearchComplete, Summary
+
+logger = logging.getLogger(__name__)
 
 ##########################
 # Tavily Search Tool Utils
@@ -250,7 +254,7 @@ def think_tool(reflection: str) -> str:
 async def get_mcp_access_token(
     supabase_token: str,
     base_mcp_url: str,
-) -> Optional[Dict[str, Any]]:
+) -> Dict[str, Any] | None:
     """Exchange Supabase token for MCP access token using OAuth token exchange.
     
     Args:
@@ -923,3 +927,333 @@ def get_tavily_api_key(config: RunnableConfig):
         return api_keys.get("TAVILY_API_KEY")
     else:
         return os.getenv("TAVILY_API_KEY")
+
+
+# ──────────────────────────────────────────────
+# Phase 2: Academic Search Wrappers
+# ──────────────────────────────────────────────
+
+async def arxiv_search(query: str, max_results: int = 5) -> list:
+    """Search arXiv for academic papers."""
+    import httpx
+    url = "http://export.arxiv.org/api/query"
+    params = {"search_query": f"all:{query}", "max_results": max_results, "sortBy": "relevance"}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+    except Exception as e:
+        logger.warning(f"arXiv search failed: {e}")
+        return []
+
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(resp.text)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    results = []
+    for entry in root.findall("atom:entry", ns):
+        title_el = entry.find("atom:title", ns)
+        summary_el = entry.find("atom:summary", ns)
+        id_el = entry.find("atom:id", ns)
+        published_el = entry.find("atom:published", ns)
+        authors = [a.find("atom:name", ns).text for a in entry.findall("atom:author", ns) if a.find("atom:name", ns) is not None]
+        pdf_link = ""
+        for link in entry.findall("atom:link", ns):
+            if link.get("title") == "pdf":
+                pdf_link = link.get("href", "")
+                break
+        results.append({
+            "title": (title_el.text or "").strip() if title_el is not None else "",
+            "url": (id_el.text or "").strip() if id_el is not None else "",
+            "snippet": (summary_el.text or "").strip()[:500] if summary_el is not None else "",
+            "source_type": "academic",
+            "date": (published_el.text or "")[:10] if published_el is not None else None,
+            "provider": "arxiv",
+            "authors": authors,
+            "pdf_url": pdf_link,
+        })
+    return results
+
+
+async def semantic_scholar_search(query: str, max_results: int = 5) -> list:
+    """Search Semantic Scholar for academic papers."""
+    import httpx
+    url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    params = {"query": query, "limit": max_results, "fields": "title,abstract,citationCount,authors,year,url,externalIds"}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as e:
+        logger.warning(f"Semantic Scholar search failed: {e}")
+        return []
+
+    results = []
+    for paper in data.get("data", []):
+        authors = [a.get("name", "") for a in paper.get("authors", [])]
+        ext_ids = paper.get("externalIds", {})
+        results.append({
+            "title": paper.get("title", ""),
+            "url": paper.get("url", ""),
+            "snippet": (paper.get("abstract") or "")[:500],
+            "source_type": "academic",
+            "date": f"{paper.get('year', '')}" if paper.get("year") else None,
+            "provider": "semantic_scholar",
+            "citation_count": paper.get("citationCount"),
+            "doi": ext_ids.get("DOI"),
+            "authors": authors,
+        })
+    return results
+
+
+async def pubmed_search(query: str, max_results: int = 5) -> list:
+    """Search PubMed for biomedical papers."""
+    import httpx
+    search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    search_params = {"db": "pubmed", "term": query, "retmax": max_results, "retmode": "json"}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            search_resp = await client.get(search_url, params=search_params)
+            search_resp.raise_for_status()
+            ids = search_resp.json().get("esearchresult", {}).get("idlist", [])
+            if not ids:
+                return []
+            summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+            summary_params = {"db": "pubmed", "id": ",".join(ids), "retmode": "json"}
+            summary_resp = await client.get(summary_url, params=summary_params)
+            summary_resp.raise_for_status()
+            results_data = summary_resp.json().get("result", {})
+    except Exception as e:
+        logger.warning(f"PubMed search failed: {e}")
+        return []
+
+    results = []
+    for pid in ids:
+        paper = results_data.get(pid, {})
+        authors = [a.get("name", "") for a in paper.get("authors", [])]
+        pubdate = paper.get("pubdate", "")
+        results.append({
+            "title": paper.get("title", ""),
+            "url": f"https://pubmed.ncbi.nlm.nih.gov/{pid}/",
+            "snippet": "",
+            "source_type": "academic",
+            "date": pubdate[:10] if pubdate else None,
+            "provider": "pubmed",
+            "authors": authors,
+        })
+    return results
+
+
+async def crossref_search(query: str, max_results: int = 5) -> list:
+    """Search Crossref for academic papers."""
+    import httpx
+    url = "https://api.crossref.org/works"
+    params = {"query": query, "rows": max_results}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            items = resp.json().get("message", {}).get("items", [])
+    except Exception as e:
+        logger.warning(f"Crossref search failed: {e}")
+        return []
+
+    results = []
+    for item in items:
+        title_list = item.get("title", [])
+        title = title_list[0] if title_list else ""
+        authors = []
+        for a in item.get("author", []):
+            name = f"{a.get('given', '')} {a.get('family', '')}".strip()
+            if name:
+                authors.append(name)
+        doi = item.get("DOI", "")
+        pub_date_parts = item.get("published-print", {}).get("date-parts", [[]])
+        date_str = None
+        if pub_date_parts and pub_date_parts[0]:
+            parts = pub_date_parts[0]
+            if len(parts) >= 3:
+                date_str = f"{parts[0]:04d}-{parts[1]:02d}-{parts[2]:02d}"
+            elif len(parts) >= 2:
+                date_str = f"{parts[0]:04d}-{parts[1]:02d}"
+            elif len(parts) >= 1:
+                date_str = f"{parts[0]:04d}"
+        results.append({
+            "title": title,
+            "url": item.get("URL", f"https://doi.org/{doi}"),
+            "snippet": "",
+            "source_type": "academic",
+            "date": date_str,
+            "provider": "crossref",
+            "doi": doi,
+            "citation_count": item.get("is-referenced-by-count"),
+            "authors": authors,
+        })
+    return results
+
+
+# ──────────────────────────────────────────────
+# Phase 2: Source Diversity & Temporal Relevance
+# ──────────────────────────────────────────────
+
+def get_domain(url: str) -> str:
+    """Extract domain from URL."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    return parsed.netloc.lower().replace("www.", "")
+
+
+def get_domain_histogram(results: List[dict]) -> Dict[str, int]:
+    """Count results per domain."""
+    histogram = {}
+    for result in results:
+        domain = get_domain(result.get("url", ""))
+        if domain:
+            histogram[domain] = histogram.get(domain, 0) + 1
+    return histogram
+
+
+def enforce_source_diversity(
+    results: List[dict],
+    min_unique_domains: int = 3,
+    max_same_domain_ratio: float = 0.4,
+) -> dict:
+    """Check if source diversity meets thresholds."""
+    if not results:
+        return {"passed": True, "histogram": {}, "dominant_domain": None, "dominant_ratio": 0.0, "unique_domains": 0, "needs_supplement": False}
+    histogram = get_domain_histogram(results)
+    total = len(results)
+    unique_domains = len(histogram)
+    dominant_domain, dominant_ratio = None, 0.0
+    for domain, count in histogram.items():
+        ratio = count / total
+        if ratio > dominant_ratio:
+            dominant_ratio = ratio
+            dominant_domain = domain
+    passed = unique_domains >= min_unique_domains and dominant_ratio <= max_same_domain_ratio
+    return {
+        "passed": passed,
+        "histogram": histogram,
+        "dominant_domain": dominant_domain,
+        "dominant_ratio": round(dominant_ratio, 2),
+        "unique_domains": unique_domains,
+        "needs_supplement": not passed,
+    }
+
+
+def _parse_date(date_str) -> datetime | None:
+    """Parse date string using fromisoformat with fallbacks."""
+    from datetime import datetime
+    if not date_str:
+        return None
+    if isinstance(date_str, list):
+        # Handle Crossref date-parts: [2024, 6, 15] or [2024, 6]
+        if len(date_str) >= 3:
+            try:
+                return datetime(date_str[0], date_str[1], date_str[2])
+            except (ValueError, TypeError):
+                pass
+        elif len(date_str) == 2:
+            try:
+                return datetime(date_str[0], date_str[1], 1)
+            except (ValueError, TypeError):
+                pass
+        return None
+    try:
+        return datetime.fromisoformat(str(date_str).replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def temporal_relevance_boost(results: List[dict], max_age_days: int = 30) -> List[dict]:
+    """Boost results by recency, returning sorted by recency_score."""
+    from datetime import datetime
+    now = datetime.now()
+    boosted = []
+    for result in results:
+        date_str = result.get("date") or result.get("publication_date")
+        date_obj = _parse_date(date_str)
+        if date_obj:
+            days_ago = max((now - date_obj).days, 0)
+            recency_score = 1 / (1 + days_ago / 30)
+        else:
+            recency_score = 0.5
+        result["recency_score"] = round(recency_score, 3)
+        boosted.append(result)
+    boosted.sort(key=lambda r: r.get("recency_score", 0), reverse=True)
+    return boosted
+
+
+# ──────────────────────────────────────────────
+# Phase 2: Search Aggregator Factory
+# ──────────────────────────────────────────────
+
+def get_search_aggregator(config):
+    """Create a SearchAggregator instance from configuration with real search functions."""
+    from open_deep_research.search_aggregator import (
+        SearchAggregator,
+        SearchProviderConfig,
+    )
+
+    providers = []
+    search_functions = {}
+
+    # Tavily — wraps existing tavily_search tool if available
+    if "tavily" in config.search_providers:
+        providers.append(SearchProviderConfig(name="tavily", priority=1))
+
+        async def tavily_search(query: str) -> list:
+            import os
+
+            from tavily import AsyncTavilyClient
+            api_key = os.getenv("TAVILY_API_KEY")
+            if not api_key:
+                return []
+            client = AsyncTavilyClient(api_key=api_key)
+            response = await client.search(query, max_results=10)
+            return [
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("url", ""),
+                    "snippet": r.get("content", ""),
+                    "provider": "tavily",
+                    "source_type": "web",
+                }
+                for r in response.get("results", [])
+            ]
+        search_functions["tavily"] = tavily_search
+
+    # DuckDuckGo
+    if "duckduckgo" in config.search_providers:
+        providers.append(SearchProviderConfig(name="duckduckgo", priority=2))
+
+        async def duckduckgo_search(query: str) -> list:
+            try:
+                from duckduckgo_search import DDGS
+                with DDGS() as ddgs:
+                    results = list(ddgs.text(query, max_results=10))
+                    return [
+                        {"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", ""), "provider": "duckduckgo"}
+                        for r in results
+                    ]
+            except Exception as e:
+                logger.warning(f"DuckDuckGo search failed: {e}")
+                return []
+        search_functions["duckduckgo"] = duckduckgo_search
+
+    # Academic providers
+    if config.enable_academic_search:
+        if config.arxiv_enabled:
+            providers.append(SearchProviderConfig(name="arxiv", priority=5, query_pattern=r"(?:arxiv|paper|preprint|research)"))
+            search_functions["arxiv"] = arxiv_search
+        if config.semantic_scholar_enabled:
+            providers.append(SearchProviderConfig(name="semantic_scholar", priority=6))
+            search_functions["semantic_scholar"] = semantic_scholar_search
+        if config.pubmed_enabled:
+            providers.append(SearchProviderConfig(name="pubmed", priority=7, query_pattern=r"(?:pubmed|biomedical|medical)"))
+            search_functions["pubmed"] = pubmed_search
+        if config.crossref_enabled:
+            providers.append(SearchProviderConfig(name="crossref", priority=8))
+            search_functions["crossref"] = crossref_search
+
+    return SearchAggregator(providers, search_functions)

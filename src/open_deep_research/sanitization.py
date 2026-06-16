@@ -1,9 +1,9 @@
 """Input sanitization and prompt injection defense."""
 from __future__ import annotations
-import re
-from typing import Dict, List
-from dataclasses import dataclass
 
+import re
+from dataclasses import dataclass
+from typing import Dict, List
 
 INJECTION_PATTERNS = [
     r"ignore\s+(all\s+)?previous\s+instructions",

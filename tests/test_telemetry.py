@@ -1,14 +1,15 @@
 """Tests for telemetry and budget enforcement."""
 import pytest
+
+from open_deep_research.exceptions import BudgetExceededError
 from open_deep_research.telemetry import (
+    PRICING_TABLE,
+    BudgetConfig,
     TelemetryCollector,
     TelemetryState,
-    BudgetConfig,
     check_budget,
     get_telemetry_summary,
-    PRICING_TABLE,
 )
-from open_deep_research.exceptions import BudgetExceededError
 
 
 class TestPricingTable:

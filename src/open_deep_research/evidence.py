@@ -1,9 +1,11 @@
 """Evidence extraction, deduplication, and compression engine."""
 from __future__ import annotations
+
 import re
-from typing import List, Dict, Optional, Tuple
 from datetime import datetime
-from open_deep_research.state import EvidenceCard, ConflictFlag, Source
+from typing import Dict, List, Tuple
+
+from open_deep_research.state import ConflictFlag, EvidenceCard, Source
 
 
 def compute_source_credibility(source: Source) -> float:
@@ -46,7 +48,7 @@ def compute_corroboration_strength(
 
 
 def compute_recency_score(
-    source_date: Optional[str],
+    source_date: str | None,
     mode: str = "default"
 ) -> float:
     """Compute recency score based on source date and research mode."""

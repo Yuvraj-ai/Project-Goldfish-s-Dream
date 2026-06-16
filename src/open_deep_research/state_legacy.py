@@ -1,7 +1,7 @@
 """Graph state definitions and data structures for the Deep Research agent."""
 
 import operator
-from typing import Annotated, Optional
+from typing import Annotated
 
 from langchain_core.messages import MessageLikeRepresentation
 from langgraph.graph import MessagesState
@@ -66,11 +66,11 @@ class AgentState(MessagesState):
     """Main agent state containing messages and research data."""
     
     supervisor_messages: Annotated[list[MessageLikeRepresentation], override_reducer]
-    research_brief: Optional[str]
+    research_brief: str | None
     raw_notes: Annotated[list[str], override_reducer] = []
     notes: Annotated[list[str], override_reducer] = []
     final_report: str
-    error_artifact: Optional[dict] = None
+    error_artifact: dict | None = None
 
 class SupervisorState(TypedDict):
     """State for the supervisor that manages research tasks."""
@@ -80,7 +80,7 @@ class SupervisorState(TypedDict):
     notes: Annotated[list[str], override_reducer] = []
     research_iterations: int = 0
     raw_notes: Annotated[list[str], override_reducer] = []
-    error_artifact: Optional[dict] = None
+    error_artifact: dict | None = None
 
 class ResearcherState(TypedDict):
     """State for individual researchers conducting research."""

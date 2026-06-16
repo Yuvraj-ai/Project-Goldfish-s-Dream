@@ -1,5 +1,6 @@
 """Tests for the evaluation harness."""
 import pytest
+
 from open_deep_research.eval_harness import EvalHarness, EvalRubricScore
 
 

@@ -1,6 +1,7 @@
 """Tests for research caching layer."""
 import pytest
-from open_deep_research.research_cache import ResearchCache, MODE_TTLS
+
+from open_deep_research.research_cache import MODE_TTLS, ResearchCache
 
 
 @pytest.fixture

@@ -366,3 +366,89 @@ Remember, your goal is to create a summary that can be easily understood and uti
 
 Today's date is {date}.
 """
+
+# ──────────────────────────────────────────────
+# Phase 2: Research Strategy Classifier
+# ──────────────────────────────────────────────
+
+CLASSIFIER_SYSTEM_PROMPT = """You are a research strategy classifier. Given a research query, classify it into one of the following modes and provide a report profile recommendation.
+
+## Research Modes
+
+1. **comparison** — Comparing two or more options, products, approaches, or entities
+   - Examples: "React vs Vue", "AWS vs Azure vs GCP", "Python vs Rust for web"
+   - Report structure: Side-by-side comparison, pros/cons, use-case recommendations
+
+2. **validation_or_fact_check** — Verifying claims, checking accuracy, debunking myths
+   - Examples: "Is dark matter real?", "Does meditation reduce anxiety?", "Is X true?"
+   - Report structure: Claim analysis, evidence evaluation, verdict
+
+3. **market_landscape** — Industry analysis, market size, competitive landscape
+   - Examples: "AI market in 2026", "cloud computing trends", "fintech landscape"
+   - Report structure: Market overview, key players, trends, opportunities
+
+4. **academic_literature_review** — Surveying academic research on a topic
+   - Examples: "research on transformer architectures", "climate change papers"
+   - Report structure: Literature synthesis, methodology trends, research gaps
+
+5. **company_due_diligence** — Research on specific companies
+   - Examples: "OpenAI financials", "Tesla competitive position", "startup X analysis"
+   - Report structure: Company overview, financials, competitive position, risks
+
+6. **technical_implementation** — How-to guides, architecture decisions, best practices
+   - Examples: "how to build RAG system", "microservices vs monolith", "best practices for X"
+   - Report structure: Implementation guide, architecture options, trade-offs
+
+7. **news_or_current_events** — Recent developments, breaking news, time-sensitive topics
+   - Examples: "latest AI news", "what happened with X today", "recent developments in Y"
+   - Report structure: Timeline, key events, implications, expert opinions
+
+8. **policy_legal_regulatory** — Policy analysis, legal implications, regulatory landscape
+   - Examples: "EU AI Act impact", "data privacy regulations", "antitrust in tech"
+   - Report structure: Policy overview, stakeholder impact, compliance requirements
+
+9. **custom** — Anything that doesn't fit above categories
+   - Report structure: Adaptive based on query
+
+## Output Format
+
+Return a JSON object with:
+- mode: One of the 9 modes above
+- confidence: 0.0 to 1.0 (how confident you are in the classification)
+- reasoning: Why you chose this mode
+- suggested_report_profile: Object with suggested_depth, suggested_sections, temporal_priority
+
+Be conservative — if uncertain, use "custom" mode with low confidence."""
+
+CLASSIFIER_HUMAN_PROMPT = """Classify this research query:
+
+{query}
+
+Today's date: {date}"""
+
+# ──────────────────────────────────────────────
+# Phase 2: Research Planning
+# ──────────────────────────────────────────────
+
+PLANNER_SYSTEM_PROMPT = """You are a research planning expert. Given a research brief and its classified mode, generate a detailed research plan.
+
+## Plan Structure
+
+Generate a plan with:
+1. **objective**: Clear statement of what the research aims to achieve
+2. **subquestions**: 3-7 specific subquestions that, when answered, fully address the objective
+3. **search_strategy**: For each subquestion, list the best search providers (web, academic, news, docs)
+4. **expected_source_types**: What types of sources are needed
+5. **proposed_sections**: Suggested sections for the final report
+6. **stop_conditions**: When to stop researching
+7. **risks**: Potential challenges or blind spots
+
+## Output Format
+
+Return a JSON object matching the ResearchPlanExtended schema."""
+
+PLANNER_HUMAN_PROMPT = """Generate a research plan for:
+
+Research Brief: {brief}
+Research Mode: {mode}
+Date: {date}"""

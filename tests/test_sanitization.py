@@ -1,6 +1,7 @@
 """Tests for input sanitization and prompt injection defense."""
 import pytest
-from open_deep_research.sanitization import ContentSanitizer, SanitizationResult
+
+from open_deep_research.sanitization import ContentSanitizer
 
 
 @pytest.fixture

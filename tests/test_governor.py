@@ -1,9 +1,13 @@
 """Tests for concurrency and rate-limit governor."""
-import pytest
-import asyncio
 import time
+
+import pytest
+
 from open_deep_research.governor import (
-    ConcurrencyGovernor, RateLimitConfig, ProviderState, PROVIDER_CONFIGS
+    PROVIDER_CONFIGS,
+    ConcurrencyGovernor,
+    ProviderState,
+    RateLimitConfig,
 )
 
 

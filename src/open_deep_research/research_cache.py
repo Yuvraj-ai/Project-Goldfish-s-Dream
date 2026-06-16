@@ -1,12 +1,12 @@
 """Search and evidence caching with mode-aware TTLs."""
 from __future__ import annotations
+
 import hashlib
 import json
 import time
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
-
+from pathlib import Path
+from typing import Any, Dict, List
 
 MODE_TTLS = {
     "news_or_current_events": 0,
@@ -76,7 +76,7 @@ class ResearchCache:
             parts.append(mode)
         return ":".join(parts)
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         entry = self._cache.get(key)
         if entry is None:
             return None
@@ -85,7 +85,7 @@ class ResearchCache:
             return None
         return entry.value
 
-    def set(self, key: str, value: Any, mode: str = "default", ttl_hours: Optional[int] = None):
+    def set(self, key: str, value: Any, mode: str = "default", ttl_hours: int | None = None):
         if ttl_hours is None:
             ttl_hours = MODE_TTLS.get(mode, MODE_TTLS["default"])
         if ttl_hours == 0:
@@ -105,7 +105,7 @@ class ResearchCache:
         self._cache.clear()
         self._save_to_disk()
 
-    def get_search_results(self, query: str, provider: str = "", mode: str = "default") -> Optional[List[Dict]]:
+    def get_search_results(self, query: str, provider: str = "", mode: str = "default") -> List[Dict] | None:
         key = self.make_key("search", query, provider, mode)
         return self.get(key)
 
@@ -113,7 +113,7 @@ class ResearchCache:
         key = self.make_key("search", query, provider, mode)
         self.set(key, results, mode=mode)
 
-    def get_evidence(self, topic: str, mode: str = "default") -> Optional[List[Dict]]:
+    def get_evidence(self, topic: str, mode: str = "default") -> List[Dict] | None:
         key = self.make_key("evidence", topic, mode=mode)
         return self.get(key)
 

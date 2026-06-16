@@ -1,7 +1,8 @@
 """Golden-set evaluation pipeline for regression testing."""
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
+
 from pydantic import BaseModel, Field
 
 

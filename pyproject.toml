@@ -29,6 +29,8 @@ dependencies = [
     "beautifulsoup4==4.14.3",
     "python-dotenv>=1.0.1",
     "pytest",
+    "pytest-asyncio>=0.23.0",
+    "respx>=0.21.0",
     "httpx>=0.24.0",
     "markdownify>=0.11.6",
     "azure-identity>=1.21.0",
@@ -87,3 +89,6 @@ lint.ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
