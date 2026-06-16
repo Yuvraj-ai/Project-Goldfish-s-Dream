@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import traceback
-from typing import Literal
+from typing import List, Literal
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import (
@@ -17,22 +17,29 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
+from open_deep_research.citation_verifier import CitationVerifier
 from open_deep_research.configuration import (
     Configuration,
+)
+from open_deep_research.evidence import (
+    compress_evidence,
+    deduplicate_claims,
+    detect_conflicts,
+    extract_evidence,
 )
 from open_deep_research.exceptions import (
     ModelError,
     ToolPermanentError,
     ToolTransientError,
 )
-from open_deep_research.evidence import (
-    extract_evidence,
-    deduplicate_claims,
-    detect_conflicts,
-    compress_evidence,
-)
+from open_deep_research.exporters import get_exporter
 from open_deep_research.prompts import (
+    CLASSIFIER_HUMAN_PROMPT,
+    CLASSIFIER_SYSTEM_PROMPT,
+    PLANNER_HUMAN_PROMPT,
+    PLANNER_SYSTEM_PROMPT,
     clarify_with_user_instructions,
     compress_research_simple_human_message,
     compress_research_system_prompt,
@@ -41,14 +48,23 @@ from open_deep_research.prompts import (
     research_system_prompt,
     transform_messages_into_research_topic_prompt,
 )
+from open_deep_research.report_profiles import MODE_TO_PROFILE, get_profile
+from open_deep_research.reviewers import (
+    ContradictionReviewer,
+    CoverageReviewer,
+    EvidenceReviewer,
+    StyleReviewer,
+)
 from open_deep_research.state import (
     AgentInputState,
     AgentState,
+    CitationCheck,
     ClarifyWithUser,
     ConductResearch,
     ResearchComplete,
     ResearcherOutputState,
     ResearcherState,
+    ResearchPlanExtended,
     ResearchQuestion,
     SupervisorState,
 )
@@ -72,7 +88,7 @@ configurable_model = init_chat_model(
     configurable_fields=("model", "max_tokens", "api_key"),
 )
 
-async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Command[Literal["write_research_brief", "__end__"]]:
+async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Command[Literal["parse_document", "__end__"]]:
     """Analyze user messages and ask clarifying questions if the research scope is unclear.
     
     This function determines whether the user's request needs clarification before proceeding
@@ -83,13 +99,13 @@ async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Comman
         config: Runtime configuration with model settings and preferences
         
     Returns:
-        Command to either end with a clarifying question or proceed to research brief
+        Command to either end with a clarifying question or proceed to document parsing
     """
     # Step 1: Check if clarification is enabled in configuration
     configurable = Configuration.from_runnable_config(config)
     if not configurable.allow_clarification:
-        # Skip clarification step and proceed directly to research
-        return Command(goto="write_research_brief")
+        # Skip clarification step and proceed directly to document parsing
+        return Command(goto="parse_document")
     
     # Step 2: Prepare the model for structured clarification analysis
     messages = state["messages"]
@@ -123,9 +139,9 @@ async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Comman
             update={"messages": [AIMessage(content=response.question)]}
         )
     else:
-        # Proceed to research with verification message
+        # Proceed to document parsing with verification message
         return Command(
-            goto="write_research_brief", 
+            goto="parse_document", 
             update={"messages": [AIMessage(content=response.verification)]}
         )
 
@@ -176,7 +192,7 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> Com
     )
     
     return Command(
-        goto="research_supervisor", 
+        goto="classify_research_request",
         update={
             "research_brief": response.research_brief,
             "supervisor_messages": {
@@ -188,6 +204,173 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> Com
             }
         }
     )
+
+
+async def classify_research_request(state: AgentState, config: RunnableConfig) -> Command[Literal["generate_research_plan"]]:
+    """Classify the research request into a mode and generate report profile."""
+    configurable = Configuration.from_runnable_config(config)
+
+    if not configurable.enable_mode_classification:
+        return Command(
+            goto="generate_research_plan",
+            update={"research_mode": configurable.default_research_mode.value}
+        )
+
+    class ClassificationResult(BaseModel):
+        mode: str
+        confidence: float
+        reasoning: str
+        suggested_report_profile: dict
+
+    classifier_model_config = {
+        "model": configurable.classifier_model or configurable.research_model,
+        "max_tokens": 1024,
+        "api_key": get_api_key_for_model(configurable.classifier_model or configurable.research_model, config),
+        "tags": ["langsmith:nostream"]
+    }
+
+    classifier_model = (
+        configurable_model
+        .with_structured_output(ClassificationResult)
+        .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
+        .with_config(classifier_model_config)
+    )
+
+    research_brief = state.get("research_brief", "")
+    prompt = CLASSIFIER_HUMAN_PROMPT.format(query=research_brief, date=get_today_str())
+    messages = [SystemMessage(content=CLASSIFIER_SYSTEM_PROMPT), HumanMessage(content=prompt)]
+    response = await classifier_model.ainvoke(messages)
+
+    # Confidence fallback: if below threshold, use CUSTOM mode
+    mode = response.mode
+    if response.confidence < configurable.classifier_confidence_threshold:
+        logger.info(f"Classifier confidence {response.confidence:.2f} < {configurable.classifier_confidence_threshold}, falling back to CUSTOM")
+        mode = "custom"
+
+    return Command(
+        goto="generate_research_plan",
+        update={
+            "research_mode": mode,
+            "report_profile": response.suggested_report_profile,
+        }
+    )
+
+
+async def parse_document(state: AgentInputState, config: RunnableConfig):
+    """Parse uploaded documents into structured artifacts and extract evidence."""
+    configurable = Configuration.from_runnable_config(config)
+
+    if not configurable.enable_document_reading:
+        return {}
+
+    document_paths = state.get("document_paths", [])
+    if not document_paths:
+        return {}
+
+    from open_deep_research.document_reader import DocumentReader
+
+    reader = DocumentReader()
+    artifacts = []
+    all_evidence = []
+
+    for path in document_paths:
+        artifact = await reader.parse_pdf(path)
+        artifacts.append(artifact.model_dump())
+
+        if artifact.parse_confidence > 0.5:
+            cards = await reader.extract_evidence_cards(artifact)
+            all_evidence.extend(cards)
+
+    return {
+        "document_artifacts": artifacts,
+        "evidence_cards": all_evidence,
+    }
+
+
+async def generate_research_plan(state: AgentState, config: RunnableConfig) -> Command[Literal["optional_plan_review"]]:
+    """Generate a detailed research plan based on the classified mode."""
+    configurable = Configuration.from_runnable_config(config)
+
+    class PlanResult(BaseModel):
+        objective: str
+        subquestions: list[str]
+        search_strategy: dict
+        expected_source_types: list[str]
+        proposed_sections: list[str]
+        stop_conditions: list[str]
+        risks: list[str]
+
+    planner_model_config = {
+        "model": configurable.research_model,
+        "max_tokens": 2048,
+        "api_key": get_api_key_for_model(configurable.research_model, config),
+        "tags": ["langsmith:nostream"]
+    }
+
+    planner_model = (
+        configurable_model
+        .with_structured_output(PlanResult)
+        .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
+        .with_config(planner_model_config)
+    )
+
+    research_brief = state.get("research_brief", "")
+    research_mode = state.get("research_mode", "custom")
+
+    prompt = PLANNER_HUMAN_PROMPT.format(brief=research_brief, mode=research_mode, date=get_today_str())
+    messages = [SystemMessage(content=PLANNER_SYSTEM_PROMPT), HumanMessage(content=prompt)]
+    response = await planner_model.ainvoke(messages)
+
+    plan = ResearchPlanExtended(
+        objective=response.objective,
+        subquestions=response.subquestions,
+        search_strategy=response.search_strategy,
+        expected_source_types=response.expected_source_types,
+        proposed_sections=response.proposed_sections,
+        stop_conditions=response.stop_conditions,
+        risks=response.risks,
+    )
+
+    return Command(
+        goto="optional_plan_review",
+        update={"research_plan": plan.model_dump()}
+    )
+
+
+async def optional_plan_review(state: AgentState, config: RunnableConfig) -> Command[Literal["research_supervisor", "generate_research_plan"]]:
+    """Review plan with rejection loop (max 2 revisions)."""
+    configurable = Configuration.from_runnable_config(config)
+
+    if configurable.plan_review_mode == "none":
+        return Command(goto="research_supervisor")
+
+    elif configurable.plan_review_mode == "interrupt":
+        from langgraph.types import interrupt
+        plan = state.get("research_plan", {})
+        review_result = interrupt({
+            "plan": plan,
+            "message": "Please review the research plan. Approve or provide feedback."
+        })
+
+        if review_result.get("approved", False):
+            return Command(goto="research_supervisor")
+        else:
+            # Check revision count
+            revision_count = state.get("plan_revision_count", 0)
+            if revision_count >= configurable.max_plan_revisions:
+                logger.warning(f"Max plan revisions ({configurable.max_plan_revisions}) reached, proceeding")
+                return Command(goto="research_supervisor")
+
+            # Loop back with feedback
+            return Command(
+                goto="generate_research_plan",
+                update={"plan_revision_count": revision_count + 1}
+            )
+
+    elif configurable.plan_review_mode == "auto_review":
+        return Command(goto="research_supervisor")
+
+    return Command(goto="research_supervisor")
 
 
 async def supervisor(state: SupervisorState, config: RunnableConfig) -> Command[Literal["supervisor_tools"]]:
@@ -568,8 +751,8 @@ async def extract_structured_evidence(state: ResearcherState, config: RunnableCo
     # Deduplicate
     unique_cards, _ = deduplicate_claims(cards)
 
-    # Detect conflicts
-    conflicts = detect_conflicts(unique_cards)
+    # Detect conflicts (stored for reference)
+    detect_conflicts(unique_cards)
 
     # Compress
     compressed = compress_evidence(unique_cards)
@@ -577,7 +760,6 @@ async def extract_structured_evidence(state: ResearcherState, config: RunnableCo
     return {
         "evidence_cards": [card.model_dump() for card in compressed],
         "sources": [src.model_dump() for src in sources],
-        "conflicts": [conf.model_dump() for conf in conflicts],
     }
 
 
@@ -669,13 +851,345 @@ researcher_builder = StateGraph(
 researcher_builder.add_node("researcher", researcher)                 # Main researcher logic
 researcher_builder.add_node("researcher_tools", researcher_tools)     # Tool execution handler
 researcher_builder.add_node("compress_research", compress_research)   # Research compression
+researcher_builder.add_node("extract_structured_evidence", extract_structured_evidence)  # Evidence extraction
 
 # Define researcher workflow edges
 researcher_builder.add_edge(START, "researcher")           # Entry point to researcher
-researcher_builder.add_edge("compress_research", END)      # Exit point after compression
+researcher_builder.add_edge("compress_research", "extract_structured_evidence")  # Compression to evidence
+researcher_builder.add_edge("extract_structured_evidence", END)  # Evidence extraction to exit
 
 # Compile researcher subgraph for parallel execution by supervisor
 researcher_subgraph = researcher_builder.compile()
+
+async def verify_citations(state: AgentState, config: RunnableConfig) -> dict:
+    """Node: Verify all citations in evidence cards and sources."""
+    configurable = Configuration.from_runnable_config(config)
+
+    if not configurable.enable_citation_verification:
+        return {"citation_checks": []}
+
+    sources = state.get("sources", [])
+    urls = list({s.get("url", "") for s in sources if s.get("url")})
+
+    if not urls:
+        return {"citation_checks": []}
+
+    verifier = CitationVerifier()
+    verification_results = await verifier.verify_batch(urls)
+
+    citation_checks = []
+    for source in sources:
+        url = source.get("url", "")
+        result = verification_results.get(url, {"status": "unverified"})
+
+        check = CitationCheck(
+            claim="",
+            url=url,
+            status=result["status"],
+            problem="" if result["status"] == "alive" else f"URL {result['status']}",
+        )
+        citation_checks.append(check.model_dump())
+
+    return {"citation_checks": citation_checks}
+
+
+def _allocate_evidence(subquestions: list, evidence_cards: list) -> dict:
+    """Allocate evidence cards to sections by subquestion_id."""
+    allocation = {}
+    if not subquestions:
+        return allocation
+    for i, sq in enumerate(subquestions):
+        sq_key = f"subquestion_{i}"
+        allocation[sq_key] = []
+    for card in evidence_cards:
+        sq_id = card.get("subquestion_id", "")
+        if sq_id in allocation:
+            allocation[sq_id].append(card.get("id", ""))
+    return allocation
+
+
+def _format_evidence_cards(cards: list) -> str:
+    """Format evidence cards for section writer prompt."""
+    if not cards:
+        return "No specific evidence cards allocated."
+    lines = []
+    for card in cards:
+        lines.append(
+            f"- [{card.get('id', 'unknown')}] {card.get('claim', '')} "
+            f"(confidence: {card.get('confidence', 0):.2f})"
+        )
+        for excerpt in card.get("exact_excerpts", [])[:2]:
+            lines.append(f"  Excerpt: {excerpt[:200]}")
+    return "\n".join(lines)
+
+
+def _resolve_profile_name(state: AgentState, config: Configuration) -> str:
+    """Resolve report profile name from config override, research mode, or default."""
+    if config.report_profile_override:
+        return config.report_profile_override
+    research_mode = state.get("research_mode", "custom")
+    if research_mode in MODE_TO_PROFILE:
+        return MODE_TO_PROFILE[research_mode]
+    return "deep_research_report"
+
+
+async def generate_report_outline(state: AgentState, config: RunnableConfig) -> dict:
+    """Generate structured report outline based on profile and evidence."""
+    configurable = Configuration.from_runnable_config(config)
+    if not configurable.enable_section_writers:
+        return {}
+    profile_name = _resolve_profile_name(state, configurable)
+    profile = get_profile(profile_name) or get_profile("deep_research_report")
+    outline = []
+    for section in profile.required_sections:
+        outline.append({"title": section.name, "description": section.description, "required": True})
+    for section in profile.optional_sections:
+        outline.append({"title": section.name, "description": section.description, "required": False})
+    subquestions = state.get("research_plan", {}).get("subquestions", [])
+    evidence_cards = state.get("evidence_cards", [])
+    evidence_allocation = _allocate_evidence(subquestions, evidence_cards)
+    return {
+        "report_outline": {
+            "profile": profile_name,
+            "sections": outline,
+            "evidence_allocation": evidence_allocation,
+            "subquestions": subquestions,
+        }
+    }
+
+
+class SectionOutput(BaseModel):
+    """Structured output for section writer."""
+
+    section_title: str
+    content: str
+    citation_ids: List[str] = Field(default_factory=list)
+    acknowledged_conflicts: List[str] = Field(default_factory=list)
+
+
+async def write_section(
+    section: dict, evidence_cards: list, profile, subquestions: list, config: RunnableConfig
+) -> dict:
+    """Write a single report section with evidence and citations using structured output."""
+    configurable = Configuration.from_runnable_config(config)
+    writer_model_config = {
+        "model": configurable.final_report_model,
+        "max_tokens": configurable.final_report_model_max_tokens,
+        "api_key": get_api_key_for_model(configurable.final_report_model, config),
+        "tags": ["langsmith:nostream"],
+    }
+    section_idx = section.get("section_idx", 0)
+    sq_key = f"subquestion_{section_idx}" if section_idx < len(subquestions) else ""
+    card_ids = section.get("evidence_allocation", {}).get(sq_key, [])
+    relevant_cards = [c for c in evidence_cards if c.get("id") in card_ids]
+    section_prompt = (
+        f'Write the "{section["title"]}" section of a {profile.tone} research report.\n\n'
+        f'Section description: {section["description"]}\n\n'
+        f"Evidence cards to incorporate:\n{_format_evidence_cards(relevant_cards)}\n\n"
+        f"Citation style: {profile.citation_style}\nTone: {profile.tone}\n\n"
+        "CRITICAL INSTRUCTION ON CONFLICTS:\n"
+        "When sources disagree, present the disagreement explicitly rather than synthesizing "
+        "a false consensus. Never average contradictory claims into a middle position.\n\n"
+        "Write a well-structured section with inline citations."
+    )
+    writer_model = (
+        configurable_model.with_structured_output(SectionOutput)
+        .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
+        .with_config(writer_model_config)
+    )
+    response = await writer_model.ainvoke([HumanMessage(content=section_prompt)])
+    return {
+        "section_title": response.section_title,
+        "content": response.content,
+        "citation_ids": response.citation_ids,
+        "acknowledged_conflicts": response.acknowledged_conflicts,
+    }
+
+
+async def write_sections_parallel(state: AgentState, config: RunnableConfig) -> dict:
+    """Write all report sections in parallel. Returns replaced list (not appended)."""
+    configurable = Configuration.from_runnable_config(config)
+    if not configurable.enable_section_writers:
+        return {"written_sections": None}
+    outline = state.get("report_outline", {})
+    sections = outline.get("sections", [])
+    evidence_cards = state.get("evidence_cards", [])
+    evidence_allocation = outline.get("evidence_allocation", {})
+    subquestions = outline.get("subquestions", [])
+    profile_name = outline.get("profile", "deep_research_report")
+    profile = get_profile(profile_name) or get_profile("deep_research_report")
+    for i, section in enumerate(sections):
+        section["section_idx"] = i
+        section["evidence_allocation"] = evidence_allocation
+    tasks = [write_section(section, evidence_cards, profile, subquestions, config) for section in sections]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    written_sections = []
+    for result in results:
+        if isinstance(result, Exception):
+            logger.warning(f"Section writer failed: {result}")
+            continue
+        written_sections.append(result)
+    return {"written_sections": written_sections}
+
+
+async def compile_report(state: AgentState, config: RunnableConfig) -> dict:
+    """Compile written sections into final report with TOC and bibliography."""
+    outline = state.get("report_outline", {})
+    written_sections = state.get("written_sections") or []
+    sources = state.get("sources", [])
+    profile_name = outline.get("profile", "deep_research_report")
+    profile = get_profile(profile_name) or get_profile("deep_research_report")
+    from open_deep_research.citation import CitationFormatter
+    formatter = CitationFormatter(profile.citation_style)
+    bibliography = formatter.format_bibliography(sources)
+    toc_lines = []
+    for i, section in enumerate(written_sections, 1):
+        title = section.get("section_title", f"Section {i}")
+        toc_lines.append(f"{i}. {title}")
+    report_parts = []
+    if profile.include_table_of_contents:
+        report_parts.append("# Table of Contents\n\n" + "\n".join(toc_lines) + "\n\n---\n")
+    for section in written_sections:
+        title = section.get("section_title", "")
+        content = section.get("content", "")
+        report_parts.append(f"## {title}\n\n{content}\n")
+    report_parts.append(f"## References\n\n{bibliography}\n")
+    final_report = "\n".join(report_parts)
+    return {"final_report": final_report, "messages": [AIMessage(content=final_report)]}
+
+
+async def export_report(state: AgentState, config: RunnableConfig) -> dict:
+    """Export the compiled report to configured formats."""
+    import uuid
+    from pathlib import Path
+
+    configurable = Configuration.from_runnable_config(config)
+    final_report = state.get("final_report", "")
+    if not final_report:
+        return {}
+
+    sources = state.get("sources", [])
+    outline = state.get("report_outline", {})
+    profile_name = outline.get("profile", "deep_research_report")
+
+    metadata = {
+        "title": state.get("research_brief", "Research Report"),
+        "generated_at": get_today_str(),
+        "profile": profile_name,
+        "sources": sources,
+    }
+
+    run_id = uuid.uuid4().hex[:8]
+    output_dir = Path("research_output") / run_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    exported_files = {}
+    for fmt in configurable.export_formats:
+        try:
+            exporter = get_exporter(fmt)
+            result_path = await exporter.export(final_report, metadata, output_dir / "report")
+            exported_files[fmt] = str(result_path)
+        except Exception as e:
+            logger.warning(f"Export to {fmt} failed: {e}")
+
+    return {"exported_files": exported_files}
+
+
+async def final_review(state: AgentState, config: RunnableConfig) -> dict:
+    """Run reviewer agents and decide whether to rewrite or export."""
+    configurable = Configuration.from_runnable_config(config)
+
+    if not configurable.enable_reviewer_loop:
+        return {}
+
+    final_report = state.get("final_report", "")
+    if not final_report:
+        return {}
+
+    outline = state.get("report_outline", {})
+    profile_name = outline.get("profile", "deep_research_report")
+    profile = get_profile(profile_name) or get_profile("deep_research_report")
+    research_plan = state.get("research_plan", {})
+    evidence_cards = state.get("evidence_cards", [])
+    citation_checks = state.get("citation_checks", [])
+    iteration = state.get("review_iteration_count", 0)
+
+    coverage_reviewer = CoverageReviewer()
+    evidence_reviewer = EvidenceReviewer()
+    contradiction_reviewer = ContradictionReviewer()
+    style_reviewer = StyleReviewer()
+
+    coverage_feedback = await coverage_reviewer.review(final_report, research_plan)
+    evidence_feedback = await evidence_reviewer.review(final_report, evidence_cards, citation_checks)
+    contradiction_feedback = await contradiction_reviewer.review(final_report)
+    style_feedback = await style_reviewer.review(final_report, profile)
+
+    all_feedback = [coverage_feedback, evidence_feedback, contradiction_feedback, style_feedback]
+    avg_score = sum(f.score for f in all_feedback) / len(all_feedback)
+
+    review_result = {
+        "coverage_score": coverage_feedback.score,
+        "evidence_score": evidence_feedback.score,
+        "style_score": style_feedback.score,
+        "contradiction_flags": contradiction_feedback.issues,
+        "iteration_count": iteration,
+        "feedback": "; ".join(f"{f.reviewer_name}: {f.score:.2f}" for f in all_feedback),
+    }
+
+    all_instructions = []
+    for f in all_feedback:
+        all_instructions.extend(f.rewrite_instructions)
+
+    if avg_score >= configurable.review_score_threshold or iteration >= configurable.max_review_iterations:
+        return {
+            "review_results": [review_result],
+            "review_iteration_count": iteration + 1,
+        }
+    else:
+        return {
+            "review_results": [review_result],
+            "review_iteration_count": iteration + 1,
+            "rewrite_instructions": all_instructions,
+        }
+
+
+async def rewrite_sections(state: AgentState, config: RunnableConfig) -> dict:
+    """Rewrite sections based on reviewer feedback."""
+    configurable = Configuration.from_runnable_config(config)
+
+    if not configurable.enable_section_writers:
+        return {"written_sections": None}
+
+    rewrite_instructions = state.get("rewrite_instructions", [])
+    if not rewrite_instructions:
+        return {}
+
+    outline = state.get("report_outline", {})
+    sections = outline.get("sections", [])
+    evidence_cards = state.get("evidence_cards", [])
+    evidence_allocation = outline.get("evidence_allocation", {})
+    subquestions = outline.get("subquestions", [])
+    profile_name = outline.get("profile", "deep_research_report")
+    profile = get_profile(profile_name) or get_profile("deep_research_report")
+
+    feedback_text = "\n".join(f"- {inst}" for inst in rewrite_instructions)
+
+    for i, section in enumerate(sections):
+        section["section_idx"] = i
+        section["evidence_allocation"] = evidence_allocation
+        section["rewrite_feedback"] = feedback_text
+
+    tasks = [write_section(section, evidence_cards, profile, subquestions, config) for section in sections]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    written_sections = []
+    for result in results:
+        if isinstance(result, Exception):
+            logger.warning(f"Section rewrite failed: {result}")
+            continue
+        written_sections.append(result)
+
+    return {"written_sections": written_sections, "rewrite_instructions": []}
+
 
 async def final_report_generation(state: AgentState, config: RunnableConfig):
     """Generate the final comprehensive research report with retry logic for token limits.
@@ -779,14 +1293,39 @@ deep_researcher_builder = StateGraph(
 
 # Add main workflow nodes for the complete research process
 deep_researcher_builder.add_node("clarify_with_user", clarify_with_user)           # User clarification phase
+deep_researcher_builder.add_node("parse_document", parse_document)                 # Document parsing phase
 deep_researcher_builder.add_node("write_research_brief", write_research_brief)     # Research planning phase
+deep_researcher_builder.add_node("classify_research_request", classify_research_request)  # Mode classification
+deep_researcher_builder.add_node("generate_research_plan", generate_research_plan)  # Research planning
+deep_researcher_builder.add_node("optional_plan_review", optional_plan_review)      # Plan review/HITL
 deep_researcher_builder.add_node("research_supervisor", supervisor_subgraph)       # Research execution phase
-deep_researcher_builder.add_node("final_report_generation", final_report_generation)  # Report generation phase
+deep_researcher_builder.add_node("verify_citations", verify_citations)            # Citation verification
+deep_researcher_builder.add_node("generate_report_outline", generate_report_outline)  # Outline generation
+deep_researcher_builder.add_node("write_sections_parallel", write_sections_parallel)  # Section writing
+deep_researcher_builder.add_node("compile_report", compile_report)                # Report compilation
+deep_researcher_builder.add_node("export_report", export_report)                # Report export
+deep_researcher_builder.add_node("final_review", final_review)                  # Quality review
+deep_researcher_builder.add_node("rewrite_sections", rewrite_sections)          # Section rewriting
+deep_researcher_builder.add_node("final_report_generation", final_report_generation)  # Legacy report generation
 
 # Define main workflow edges for sequential execution
 deep_researcher_builder.add_edge(START, "clarify_with_user")                       # Entry point
-deep_researcher_builder.add_edge("research_supervisor", "final_report_generation") # Research to report
-deep_researcher_builder.add_edge("final_report_generation", END)                   # Final exit point
+deep_researcher_builder.add_edge("parse_document", "write_research_brief")         # Parse to brief
+deep_researcher_builder.add_edge("classify_research_request", "generate_research_plan")  # Classify to plan
+deep_researcher_builder.add_edge("generate_research_plan", "optional_plan_review")  # Plan to review
+deep_researcher_builder.add_edge("optional_plan_review", "research_supervisor")     # Review to supervisor
+deep_researcher_builder.add_edge("research_supervisor", "verify_citations")       # Research to citation verification
+deep_researcher_builder.add_edge("verify_citations", "generate_report_outline")   # Citations to outline
+deep_researcher_builder.add_edge("generate_report_outline", "write_sections_parallel")  # Outline to sections
+deep_researcher_builder.add_edge("write_sections_parallel", "compile_report")     # Sections to compilation
+deep_researcher_builder.add_edge("compile_report", "final_review")               # Compilation to review
+deep_researcher_builder.add_conditional_edges(
+    "final_review",
+    lambda state: "rewrite_sections" if state.get("rewrite_instructions") else "export_report",
+    {"rewrite_sections": "rewrite_sections", "export_report": "export_report"},
+)
+deep_researcher_builder.add_edge("rewrite_sections", "compile_report")           # Rewrite loops back to compilation
+deep_researcher_builder.add_edge("export_report", END)                           # Export to END
 
 # Compile the complete deep researcher workflow
 deep_researcher = deep_researcher_builder.compile()

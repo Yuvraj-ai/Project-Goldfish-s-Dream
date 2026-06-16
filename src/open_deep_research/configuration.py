@@ -2,10 +2,23 @@
 
 import os
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, List, Literal
 
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field
+
+
+class ResearchMode(str, Enum):
+    """Research modes for adaptive strategy selection."""
+    COMPARISON = "comparison"
+    VALIDATION_OR_FACT_CHECK = "validation_or_fact_check"
+    MARKET_LANDSCAPE = "market_landscape"
+    ACADEMIC_LITERATURE_REVIEW = "academic_literature_review"
+    COMPANY_DUE_DILIGENCE = "company_due_diligence"
+    TECHNICAL_IMPLEMENTATION = "technical_implementation"
+    NEWS_OR_CURRENT_EVENTS = "news_or_current_events"
+    POLICY_LEGAL_REGULATORY = "policy_legal_regulatory"
+    CUSTOM = "custom"
 
 
 class SearchAPI(Enum):
@@ -19,17 +32,17 @@ class SearchAPI(Enum):
 class MCPConfig(BaseModel):
     """Configuration for Model Context Protocol (MCP) servers."""
     
-    url: Optional[str] = Field(
+    url: str | None = Field(
         default=None,
         optional=True,
     )
     """The URL of the MCP server"""
-    tools: Optional[List[str]] = Field(
+    tools: List[str] | None = Field(
         default=None,
         optional=True,
     )
     """The tools to make available to the LLM"""
-    auth_required: Optional[bool] = Field(
+    auth_required: bool | None = Field(
         default=False,
         optional=True,
     )
@@ -211,7 +224,7 @@ class Configuration(BaseModel):
         }
     )
     # MCP server configuration
-    mcp_config: Optional[MCPConfig] = Field(
+    mcp_config: MCPConfig | None = Field(
         default=None,
         optional=True,
         metadata={
@@ -221,7 +234,7 @@ class Configuration(BaseModel):
             }
         }
     )
-    mcp_prompt: Optional[str] = Field(
+    mcp_prompt: str | None = Field(
         default=None,
         optional=True,
         metadata={
@@ -231,6 +244,234 @@ class Configuration(BaseModel):
             }
         }
     )
+
+    # Research mode classifier
+    default_research_mode: ResearchMode = Field(
+        default=ResearchMode.CUSTOM,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "select",
+                "default": "custom",
+                "description": "Default research mode when classification is disabled or uncertain.",
+                "options": [
+                    {"label": m.value, "value": m.value}
+                    for m in ResearchMode
+                ]
+            }
+        }
+    )
+    enable_mode_classification: bool = Field(
+        default=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": True,
+                "description": "Whether to classify research queries into adaptive modes."
+            }
+        }
+    )
+    classifier_model: str | None = Field(
+        default=None,
+        optional=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "description": "Model for classifying research queries. Defaults to research_model if not set."
+            }
+        }
+    )
+    classifier_confidence_threshold: float = Field(
+        default=0.6,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "number",
+                "default": 0.6,
+                "min": 0.0,
+                "max": 1.0,
+                "description": "Minimum confidence to accept classifier mode. Below this, falls back to CUSTOM."
+            }
+        }
+    )
+
+    # Research planning
+    plan_review_mode: Literal["none", "interrupt", "auto_review"] = Field(
+        default="none",
+        metadata={
+            "x_oap_ui_config": {
+                "type": "select",
+                "default": "none",
+                "description": "How to handle research plan review.",
+                "options": [
+                    {"label": "None", "value": "none"},
+                    {"label": "Interrupt (HITL)", "value": "interrupt"},
+                    {"label": "Auto Review", "value": "auto_review"},
+                ]
+            }
+        }
+    )
+    max_subquestions: int = Field(
+        default=7,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "number",
+                "default": 7,
+                "min": 1,
+                "max": 15,
+                "description": "Maximum number of subquestions in a research plan."
+            }
+        }
+    )
+    min_subquestions: int = Field(
+        default=3,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "number",
+                "default": 3,
+                "min": 1,
+                "max": 10,
+                "description": "Minimum number of subquestions in a research plan."
+            }
+        }
+    )
+    max_plan_revisions: int = Field(
+        default=2,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "number",
+                "default": 2,
+                "min": 0,
+                "max": 5,
+                "description": "Maximum plan revisions before proceeding."
+            }
+        }
+    )
+
+    # Search aggregation
+    enable_search_aggregation: bool = Field(
+        default=False,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": False,
+                "description": "Enable multi-provider search aggregation."
+            }
+        }
+    )
+    search_providers: List[str] = Field(
+        default=["tavily"],
+        metadata={
+            "x_oap_ui_config": {
+                "type": "text",
+                "description": "Comma-separated list of search providers to use."
+            }
+        }
+    )
+    max_search_results: int = Field(
+        default=20,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "number",
+                "default": 20,
+                "description": "Maximum results from search aggregator."
+            }
+        }
+    )
+
+    # Academic search
+    enable_academic_search: bool = Field(
+        default=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": True,
+                "description": "Enable academic database search (arXiv, Semantic Scholar, PubMed, Crossref)."
+            }
+        }
+    )
+    arxiv_enabled: bool = Field(default=True)
+    semantic_scholar_enabled: bool = Field(default=True)
+    pubmed_enabled: bool = Field(default=True)
+    crossref_enabled: bool = Field(default=True)
+
+    # Source diversity
+    min_unique_domains: int = Field(default=3)
+    max_same_domain_ratio: float = Field(default=0.4)
+    max_age_days_latest_mode: int = Field(default=30)
+
+    # Document reading
+    enable_document_reading: bool = Field(
+        default=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": True,
+                "description": "Enable document upload and parsing."
+            }
+        }
+    )
+    max_document_pages: int = Field(default=500)
+
+    # STORM multi-perspective
+    enable_storm_research: bool = Field(
+        default=False,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": False,
+                "description": "Enable STORM-style multi-perspective research."
+            }
+        }
+    )
+    max_perspectives: int = Field(default=7)
+    max_storm_parallel_researchers: int = Field(default=15)
+
+    # Phase 3: Citation verification
+    enable_citation_verification: bool = Field(
+        default=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": True,
+                "description": "Enable citation verification before report generation."
+            }
+        }
+    )
+
+    # Phase 3: Section writers
+    enable_section_writers: bool = Field(
+        default=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": True,
+                "description": "Enable section-level report generation."
+            }
+        }
+    )
+
+    # Phase 3: Reviewer loop
+    enable_reviewer_loop: bool = Field(
+        default=True,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "boolean",
+                "default": True,
+                "description": "Enable reviewer agent loop for quality assurance."
+            }
+        }
+    )
+    max_review_iterations: int = Field(default=2)
+    review_score_threshold: float = Field(default=0.7)
+
+    # Phase 3: Citation style
+    citation_style: str = Field(default="vanilla")
+
+    # Phase 3: Export
+    export_formats: List[str] = Field(default=["markdown"])
+
+    # Phase 3: Report profile
+    report_profile_override: str | None = Field(default=None)
+
     # Feature Flags
     enable_evidence_first: bool = Field(
         default=False,
@@ -266,7 +507,7 @@ class Configuration(BaseModel):
 
     @classmethod
     def from_runnable_config(
-        cls, config: Optional[RunnableConfig] = None
+        cls, config: RunnableConfig | None = None
     ) -> "Configuration":
         """Create a Configuration instance from a RunnableConfig."""
         configurable = config.get("configurable", {}) if config else {}

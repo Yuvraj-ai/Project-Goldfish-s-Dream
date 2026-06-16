@@ -9,7 +9,7 @@ State typing boundary:
 from __future__ import annotations
 
 import operator
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, Dict, List, Literal
 
 from langchain_core.messages import MessageLikeRepresentation
 from langgraph.graph import MessagesState
@@ -65,12 +65,12 @@ class Source(BaseModel):
     url: str
     title: str = ""
     publisher: str = ""
-    date: Optional[str] = None
+    date: str | None = None
     credibility_score: float = Field(default=0.5, ge=0.0, le=1.0)
     source_type: Literal["web", "academic", "document", "api"] = "web"
     raw_excerpts: List[str] = Field(default_factory=list)
     provider: str = ""
-    accessed_at: Optional[str] = None
+    accessed_at: str | None = None
 
 
 class EvidenceCard(BaseModel):
@@ -104,11 +104,22 @@ class ResearchPlan(BaseModel):
     risks: List[str] = Field(default_factory=list)
 
 
+class ResearchPlanExtended(BaseModel):
+    """Extended research plan with search strategies and report outline."""
+    objective: str
+    subquestions: List[str] = Field(default_factory=list)
+    search_strategy: Dict[str, List[str]] = Field(default_factory=dict)
+    expected_source_types: List[str] = Field(default_factory=list)
+    proposed_sections: List[str] = Field(default_factory=list)
+    stop_conditions: List[str] = Field(default_factory=list)
+    risks: List[str] = Field(default_factory=list)
+
+
 class CitationCheck(BaseModel):
     """Result of verifying a citation."""
     claim: str
     url: str
-    supports_claim: Optional[bool] = None
+    supports_claim: bool | None = None
     problem: str = ""
     fix: str = ""
     status: Literal["verified", "unverified", "dead", "stale"] = "unverified"
@@ -180,17 +191,18 @@ def append_evidence(
 
 class AgentInputState(MessagesState):
     """InputState is only 'messages'."""
+    document_paths: List[str] = Field(default_factory=list)
 
 
 class AgentState(MessagesState):
     """Main agent state containing messages and research data."""
 
     supervisor_messages: Annotated[list[MessageLikeRepresentation], override_reducer]
-    research_brief: Optional[str]
+    research_brief: str | None
     raw_notes: Annotated[list[str], override_reducer] = []
     notes: Annotated[list[str], override_reducer] = []
     final_report: str
-    error_artifact: Optional[dict] = None
+    error_artifact: dict | None = None
 
     # Evidence-first fields (additive, backward-compatible)
     sources: Annotated[List[dict], merge_sources] = []
@@ -201,6 +213,20 @@ class AgentState(MessagesState):
     telemetry: dict = {}
     total_tokens: int = 0
 
+    # Phase 2: Adaptive research fields
+    research_mode: str | None = None
+    report_profile: dict | None = None
+    research_plan: dict | None = None
+    document_artifacts: List[dict] = Field(default_factory=list)
+    plan_revision_count: int = 0
+
+    # Phase 3: Report generation fields
+    report_outline: dict | None = None
+    written_sections: List[dict] | None = None  # Last-write-wins (not operator.add)
+    exported_files: dict = Field(default_factory=dict)
+    review_iteration_count: int = 0
+    rewrite_instructions: List[str] = Field(default_factory=list)
+
 
 class SupervisorState(TypedDict):
     """State for the supervisor that manages research tasks."""
@@ -210,13 +236,19 @@ class SupervisorState(TypedDict):
     notes: Annotated[list[str], override_reducer] = []
     research_iterations: int = 0
     raw_notes: Annotated[list[str], override_reducer] = []
-    error_artifact: Optional[dict] = None
+    error_artifact: dict | None = None
 
     # Evidence-first fields (additive, backward-compatible)
     sources: Annotated[List[dict], merge_sources] = []
     evidence_cards: Annotated[List[dict], append_evidence] = []
     conflicts: List[dict] = []  # NOTE: no reducer — overwritten on update (add reducer when multi-node writes needed)
     total_tokens: int = 0
+
+    # Phase 2: Adaptive research fields
+    research_mode: str | None = None
+    research_plan: dict | None = None
+    perspectives: Annotated[List[dict], operator.add] = []
+    coverage_matrix: dict | None = None
 
 
 class ResearcherState(TypedDict):
