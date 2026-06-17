@@ -894,18 +894,64 @@ async def verify_citations(state: AgentState, config: RunnableConfig) -> dict:
 
 
 def _allocate_evidence(subquestions: list, evidence_cards: list) -> dict:
-    """Allocate evidence cards to sections by subquestion_id."""
+    """Allocate evidence cards to sections by subquestion_id.
+
+    Uses actual subquestion text as keys (matching what's on evidence cards).
+    Falls back to "main" for cards with unaligned subquestion_id.
+    """
     allocation = {}
     if not subquestions:
+        # No subquestions — put all evidence under "main"
+        allocation["main"] = [card.get("id", "") for card in evidence_cards]
         return allocation
-    for i, sq in enumerate(subquestions):
-        sq_key = f"subquestion_{i}"
-        allocation[sq_key] = []
+
+    # Initialize allocation per subquestion (using actual text as key)
+    for sq in subquestions:
+        allocation[sq] = []
+
+    # Also create a "main" bucket for unaligned cards
+    allocation["main"] = []
+
+    # Assign cards by subquestion_id
     for card in evidence_cards:
         sq_id = card.get("subquestion_id", "")
         if sq_id in allocation:
             allocation[sq_id].append(card.get("id", ""))
+        elif sq_id == "main":
+            allocation["main"].append(card.get("id", ""))
+        else:
+            # Unknown subquestion_id — try keyword matching
+            matched = False
+            for sq in subquestions:
+                sq_words = set(sq.lower().split())
+                card_words = set(card.get("claim", "").lower().split())
+                if len(sq_words & card_words) >= 2:  # At least 2 words in common
+                    allocation[sq].append(card.get("id", ""))
+                    matched = True
+                    break
+            if not matched:
+                allocation["main"].append(card.get("id", ""))
+
     return allocation
+
+
+def _map_section_to_subquestion(section: dict, subquestions: list) -> str:
+    """Map a section to the best-matching subquestion using keyword overlap."""
+    section_title = section.get("title", "").lower()
+    section_desc = section.get("description", "").lower()
+    section_words = set(section_title.split()) | set(section_desc.split())
+
+    best_sq = ""
+    best_score = 0
+
+    for sq in subquestions:
+        sq_words = set(sq.lower().split())
+        overlap = len(section_words & sq_words)
+        if overlap > best_score:
+            best_score = overlap
+            best_sq = sq
+
+    return best_sq if best_score >= 1 else ""
 
 
 def _format_evidence_cards(cards: list) -> str:
@@ -978,9 +1024,13 @@ async def write_section(
         "api_key": get_api_key_for_model(configurable.final_report_model, config),
         "tags": ["langsmith:nostream"],
     }
-    section_idx = section.get("section_idx", 0)
-    sq_key = f"subquestion_{section_idx}" if section_idx < len(subquestions) else ""
-    card_ids = section.get("evidence_allocation", {}).get(sq_key, [])
+    # Map section to best-matching subquestion using keyword overlap
+    matched_sq = _map_section_to_subquestion(section, subquestions)
+    evidence_allocation = section.get("evidence_allocation", {})
+    card_ids = evidence_allocation.get(matched_sq, []) if matched_sq else []
+    # If no match, try "main" bucket
+    if not card_ids:
+        card_ids = evidence_allocation.get("main", [])
     relevant_cards = [c for c in evidence_cards if c.get("id") in card_ids]
     section_prompt = (
         f'Write the "{section["title"]}" section of a {profile.tone} research report.\n\n'
@@ -1018,9 +1068,11 @@ async def write_sections_parallel(state: AgentState, config: RunnableConfig) -> 
     subquestions = outline.get("subquestions", [])
     profile_name = outline.get("profile", "deep_research_report")
     profile = get_profile(profile_name) or get_profile("deep_research_report")
-    for i, section in enumerate(sections):
-        section["section_idx"] = i
+
+    # Pass evidence allocation to each section
+    for section in sections:
         section["evidence_allocation"] = evidence_allocation
+
     tasks = [write_section(section, evidence_cards, profile, subquestions, config) for section in sections]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     written_sections = []
@@ -1174,10 +1226,9 @@ async def rewrite_sections(state: AgentState, config: RunnableConfig) -> dict:
 
     feedback_text = "\n".join(f"- {inst}" for inst in rewrite_instructions)
 
-    for i, section in enumerate(sections):
-        section["section_idx"] = i
-        section["evidence_allocation"] = evidence_allocation
+    for section in sections:
         section["rewrite_feedback"] = feedback_text
+        section["evidence_allocation"] = outline.get("evidence_allocation", {})
 
     tasks = [write_section(section, evidence_cards, profile, subquestions, config) for section in sections]
     results = await asyncio.gather(*tasks, return_exceptions=True)
