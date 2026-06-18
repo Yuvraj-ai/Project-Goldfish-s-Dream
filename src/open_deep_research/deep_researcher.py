@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import traceback
+from datetime import datetime, timezone
 from typing import List, Literal
 
 from langchain.chat_models import init_chat_model
@@ -19,6 +20,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from open_deep_research.api.models import ProgressEvent
 from open_deep_research.citation_verifier import CitationVerifier
 from open_deep_research.configuration import (
     Configuration,
@@ -82,6 +84,22 @@ from open_deep_research.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _emit_progress(config, event_type: str, phase: str, message: str) -> None:
+    """Emit a progress event if repo and run_id are available in config."""
+    repo = config.get("configurable", {}).get("repo")
+    run_id = config.get("configurable", {}).get("run_id")
+    if repo and run_id:
+        try:
+            seq = await repo.next_seq(run_id)
+            await repo.append_progress(run_id, ProgressEvent(
+                seq=seq, event_type=event_type, phase=phase,
+                message=message,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ))
+        except Exception:
+            pass
 
 # Initialize a configurable model that we will use throughout the agent
 configurable_model = init_chat_model(
@@ -863,6 +881,7 @@ researcher_subgraph = researcher_builder.compile()
 
 async def verify_citations(state: AgentState, config: RunnableConfig) -> dict:
     """Node: Verify all citations in evidence cards and sources."""
+    await _emit_progress(config, "phase_start", "verify_citations", "Starting citation verification...")
     configurable = Configuration.from_runnable_config(config)
 
     if not configurable.enable_citation_verification:
@@ -981,6 +1000,7 @@ def _resolve_profile_name(state: AgentState, config: Configuration) -> str:
 
 async def generate_report_outline(state: AgentState, config: RunnableConfig) -> dict:
     """Generate structured report outline based on profile and evidence."""
+    await _emit_progress(config, "phase_start", "generate_report_outline", "Generating report outline...")
     configurable = Configuration.from_runnable_config(config)
     if not configurable.enable_section_writers:
         return {}
@@ -1058,6 +1078,7 @@ async def write_section(
 
 async def write_sections_parallel(state: AgentState, config: RunnableConfig) -> dict:
     """Write all report sections in parallel. Returns replaced list (not appended)."""
+    await _emit_progress(config, "phase_start", "write_sections_parallel", "Writing report sections...")
     configurable = Configuration.from_runnable_config(config)
     if not configurable.enable_section_writers:
         return {"written_sections": None}
@@ -1086,6 +1107,7 @@ async def write_sections_parallel(state: AgentState, config: RunnableConfig) -> 
 
 async def compile_report(state: AgentState, config: RunnableConfig) -> dict:
     """Compile written sections into final report with TOC and bibliography."""
+    await _emit_progress(config, "phase_start", "compile_report", "Compiling final report...")
     outline = state.get("report_outline", {})
     written_sections = state.get("written_sections") or []
     sources = state.get("sources", [])
@@ -1112,6 +1134,7 @@ async def compile_report(state: AgentState, config: RunnableConfig) -> dict:
 
 async def export_report(state: AgentState, config: RunnableConfig) -> dict:
     """Export the compiled report to configured formats."""
+    await _emit_progress(config, "phase_start", "export_report", "Exporting report...")
     import uuid
     from pathlib import Path
 
@@ -1149,6 +1172,7 @@ async def export_report(state: AgentState, config: RunnableConfig) -> dict:
 
 async def final_review(state: AgentState, config: RunnableConfig) -> dict:
     """Run reviewer agents and decide whether to rewrite or export."""
+    await _emit_progress(config, "phase_start", "final_review", "Running quality review...")
     configurable = Configuration.from_runnable_config(config)
 
     if not configurable.enable_reviewer_loop:
