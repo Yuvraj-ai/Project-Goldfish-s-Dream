@@ -116,6 +116,10 @@ class ResearchRunner:
         return True
 
     @classmethod
+    def list_active(cls) -> list[str]:
+        return list(cls._tasks.keys())
+
+    @classmethod
     def get_status(cls, run_id: str) -> str | None:
         task = cls._tasks.get(run_id)
         if task is None:

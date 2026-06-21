@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from open_deep_research.api.deps import get_repo, verify_api_key
+from open_deep_research.api.deps import get_repo, require_scope, verify_api_key
 from open_deep_research.api.exceptions import NotFoundError
 from open_deep_research.api.models import RunRecord
 from open_deep_research.api.repository import ResearchRepository
@@ -38,6 +38,7 @@ async def start_research(
 async def get_run(
     run_id: str,
     repo: ResearchRepository = Depends(get_repo),
+    _: None = Depends(require_scope("research:read")),
 ) -> RunRecord:
     run = await repo.get_run(run_id)
     if run is None:
@@ -49,6 +50,7 @@ async def get_run(
 async def stream_research(
     run_id: str,
     repo: ResearchRepository = Depends(get_repo),
+    _: None = Depends(require_scope("research:read")),
 ) -> StreamingResponse:
     run = await repo.get_run(run_id)
     if run is None:
@@ -72,6 +74,7 @@ async def stream_research(
 async def get_report(
     run_id: str,
     repo: ResearchRepository = Depends(get_repo),
+    _: None = Depends(require_scope("research:read")),
 ) -> dict:
     run = await repo.get_run(run_id)
     if run is None:
@@ -87,6 +90,7 @@ async def export_report(
     run_id: str,
     fmt: str,
     repo: ResearchRepository = Depends(get_repo),
+    _: None = Depends(require_scope("research:read")),
 ) -> dict:
     run = await repo.get_run(run_id)
     if run is None:
@@ -106,6 +110,7 @@ async def export_report(
 async def cancel_research(
     run_id: str,
     repo: ResearchRepository = Depends(get_repo),
+    _: None = Depends(require_scope("research:write")),
 ) -> dict:
     run = await repo.get_run(run_id)
     if run is None:

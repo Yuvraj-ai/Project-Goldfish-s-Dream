@@ -65,3 +65,49 @@ def test_webhook_config_model():
     assert wh.active is True
     assert wh.timeout_seconds == 5
     assert wh.retry_max == 3
+
+
+def test_webhook_event_filter():
+    from open_deep_research.api.models import WebhookConfig
+    from open_deep_research.api.webhooks import WebhookNotifier
+
+    wh = WebhookConfig(
+        url="https://example.com/hook",
+        events=["research.completed", "research.failed"],
+    )
+    assert WebhookNotifier._matches_event(wh, "research.completed") is True
+    assert WebhookNotifier._matches_event(wh, "research.started") is False
+    assert WebhookNotifier._matches_event(wh, "export.generated") is False
+    wh_all = WebhookConfig(url="https://example.com/hook", events=[])
+    assert WebhookNotifier._matches_event(wh_all, "anything") is True
+
+
+@pytest.mark.asyncio
+async def test_webhook_signing_deterministic():
+    from open_deep_research.api.webhooks import WebhookNotifier
+
+    notifier = WebhookNotifier(None)  # type: ignore
+    payload = {"event": "research.completed", "run_id": "abc123"}
+    sig1 = notifier._sign(payload, "mysecret")
+    sig2 = notifier._sign(payload, "mysecret")
+    assert sig1 == sig2
+    sig3 = notifier._sign(payload, "different-secret")
+    assert sig1 != sig3
+
+
+@pytest.mark.asyncio
+async def test_webhook_delivery_failure_logged():
+    from unittest.mock import AsyncMock
+    from open_deep_research.api.models import WebhookConfig
+    from open_deep_research.api.webhooks import WebhookNotifier
+
+    wh = WebhookConfig(
+        url="https://nonexistent.example.com/hook",
+        events=["research.completed"],
+    )
+    notifier = WebhookNotifier(None)  # type: ignore
+    client = AsyncMock()
+    client.post = AsyncMock(side_effect=Exception("Connection failed"))
+
+    result = await notifier._deliver(client, wh, "research.completed", b"{}")
+    assert result is None

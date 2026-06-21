@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from open_deep_research.api.deps import get_repo
+from open_deep_research.api.deps import get_repo, require_scope
 from open_deep_research.api.models import WebhookConfig
 from open_deep_research.api.repository import ResearchRepository
 
@@ -19,6 +19,7 @@ class WebhookCreate(BaseModel):
 @router.get("/webhooks")
 async def list_webhooks(
     repo: ResearchRepository = Depends(get_repo),
+    _: None = Depends(require_scope("admin")),
 ) -> list[WebhookConfig]:
     return await repo.list_webhooks()
 
@@ -27,6 +28,7 @@ async def list_webhooks(
 async def create_webhook(
     body: WebhookCreate,
     repo: ResearchRepository = Depends(get_repo),
+    _: None = Depends(require_scope("admin")),
 ) -> WebhookConfig:
     wh = WebhookConfig(url=body.url, events=body.events, secret=body.secret)
     await repo.save_webhook(wh)
@@ -37,6 +39,7 @@ async def create_webhook(
 async def delete_webhook(
     webhook_id: str,
     repo: ResearchRepository = Depends(get_repo),
+    _: None = Depends(require_scope("admin")),
 ) -> dict:
     await repo.delete_webhook(webhook_id)
     return {"status": "deleted"}

@@ -488,6 +488,11 @@ class Configuration(BaseModel):
         default=[],
         description="Directories to scan for custom source plugins",
     )
+    enable_model_routing: bool = Field(
+        default=False,
+        description="Enable model routing for cost optimization. When enabled, "
+                    "the ModelRouter selects the appropriate model tier per task.",
+    )
 
     # Budget Configuration
     max_total_tokens: int = Field(

@@ -6,6 +6,8 @@ from typing import Callable, Dict, List, Literal
 
 from pydantic import BaseModel, Field
 
+from open_deep_research.api.plugins.loader import PluginLoader
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +41,7 @@ class SearchProviderConfig(BaseModel):
 class SearchAggregator:
     """Aggregates search results from multiple providers with deduplication."""
 
-    def __init__(self, providers: List[SearchProviderConfig], search_functions: Dict[str, Callable], plugin_loader=None):
+    def __init__(self, providers: List[SearchProviderConfig], search_functions: Dict[str, Callable], plugin_loader: PluginLoader | None = None):
         self.providers = sorted(providers, key=lambda p: p.priority)
         self.search_functions = search_functions
         self.plugin_loader = plugin_loader
@@ -78,21 +80,22 @@ class SearchAggregator:
 
         if self.plugin_loader:
             plugins = self.plugin_loader.list()
-            for plugin in plugins:
-                try:
-                    plugin_results = await plugin.search(query, max_results)
-                    for pr in plugin_results:
-                        all_results.append(SearchResult(
-                            title=pr.title,
-                            url=pr.url,
-                            snippet=pr.snippet,
-                            source_type=pr.source_type,
-                            provider=f"plugin:{plugin.name}",
-                            date=pr.published_date,
-                            relevance_score=pr.credibility_score,
-                        ))
-                except Exception as e:
-                    logger.warning("Plugin %s search failed: %s", plugin.name, e)
+            plugin_tasks = [plugin.search(query, max_results) for plugin in plugins]
+            plugin_results_list = await asyncio.gather(*plugin_tasks, return_exceptions=True)
+            for plugin, results in zip(plugins, plugin_results_list):
+                if isinstance(results, Exception):
+                    logger.warning("Plugin %s search failed: %s", plugin.name, results)
+                    continue
+                for pr in results:
+                    all_results.append(SearchResult(
+                        title=pr.title,
+                        url=pr.url,
+                        snippet=pr.snippet,
+                        source_type=pr.source_type,
+                        provider=f"plugin:{plugin.name}",
+                        date=pr.published_date,
+                        relevance_score=pr.credibility_score,
+                    ))
 
         deduplicated = self._deduplicate(all_results)
         deduplicated.sort(key=lambda r: r.relevance_score, reverse=True)

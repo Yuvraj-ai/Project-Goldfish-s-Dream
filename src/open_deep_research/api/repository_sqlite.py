@@ -173,6 +173,13 @@ class SqliteResearchRepository(ResearchRepository):
         result = await row.fetchone()
         return json.loads(result["data"]) if result else None
 
+    async def list_memory_keys(self, namespace: str) -> list[str]:
+        async with self.db.execute(
+            "SELECT key FROM memory WHERE namespace = ?", (namespace,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [row["key"] for row in rows]
+
     async def list_webhooks(self) -> list[WebhookConfig]:
         rows = await self.db.execute("SELECT * FROM webhook_configs")
         results = []

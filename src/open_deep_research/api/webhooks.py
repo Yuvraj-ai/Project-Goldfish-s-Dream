@@ -72,6 +72,15 @@ class WebhookNotifier:
             if attempt < wh.retry_max - 1:
                 await asyncio.sleep(2 ** attempt)
 
+    @staticmethod
+    def _matches_event(wh: WebhookConfig, event_type: str) -> bool:
+        if not wh.events:
+            return True
+        return event_type in wh.events
+
+    def _sign(self, payload: dict, secret: str) -> str:
+        return generate_signature(secret, json.dumps(payload).encode())
+
     async def close(self) -> None:
         if self._delivery_tasks:
             await asyncio.gather(*self._delivery_tasks, return_exceptions=True)

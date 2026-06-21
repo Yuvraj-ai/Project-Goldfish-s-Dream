@@ -23,7 +23,9 @@ async def watch_run(
             yield event
 
         run = await repo.get_run(run_id)
-        if run and run.status in ("completed", "failed", "cancelled"):
+        if run is None:
+            break
+        if run.status in ("completed", "failed", "cancelled"):
             remaining = await repo.progress_after(run_id, last_seq)
             for event in remaining:
                 yield event

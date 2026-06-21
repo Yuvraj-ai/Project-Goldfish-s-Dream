@@ -90,6 +90,18 @@ class ModelRouter:
         model = self._providers[0].models.get(tier, self._providers[0].models[ModelTier.BALANCED])
         return model, tier
 
+    def select_with_tier_if_enabled(
+        self,
+        task_type: TaskType,
+        input_length: int = 0,
+        complexity_hint: ModelTier | None = None,
+        enabled: bool = True,
+    ) -> tuple[str, ModelTier] | None:
+        """Select model with tier, return None if routing is disabled."""
+        if not enabled:
+            return None
+        return self.select_with_tier(task_type, input_length, complexity_hint)
+
     def _resolve_tier(
         self,
         task_type: TaskType,

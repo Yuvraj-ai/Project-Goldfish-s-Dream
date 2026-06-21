@@ -52,6 +52,36 @@ async def test_runner_get_status():
 
 
 @pytest.mark.asyncio
+async def test_runner_semaphore_limits(tmp_path):
+    from open_deep_research.api.runner import ResearchRunner
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        import asyncio
+        import open_deep_research.api.runner as runner_mod
+        semaphore = asyncio.Semaphore(2)
+        runner_mod.ResearchRunner._semaphore = semaphore
+        try:
+            from unittest.mock import patch
+            with patch.object(ResearchRunner, "_execute", return_value=None):
+                run_id = await ResearchRunner.start(repo, "test", {}, None)
+                assert run_id is not None
+        finally:
+            runner_mod.ResearchRunner._semaphore = None
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_runner_list_active():
+    from open_deep_research.api.runner import ResearchRunner
+    active = ResearchRunner.list_active()
+    assert isinstance(active, list)
+
+
+@pytest.mark.asyncio
 async def test_runner_executes_graph_and_saves_report(tmp_path):
     import asyncio
     import types

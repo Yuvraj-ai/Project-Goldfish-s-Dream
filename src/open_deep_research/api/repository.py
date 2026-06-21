@@ -58,6 +58,9 @@ class ResearchRepository(ABC):
     ) -> dict | None: ...
 
     @abstractmethod
+    async def list_memory_keys(self, namespace: str) -> list[str]: ...
+
+    @abstractmethod
     async def list_webhooks(self) -> list[WebhookConfig]: ...
 
     @abstractmethod

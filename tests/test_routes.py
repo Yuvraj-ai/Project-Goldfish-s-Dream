@@ -126,3 +126,57 @@ async def test_webhook_crud():
 
         resp = await client.get("/webhooks")
         assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_auth_required():
+    from open_deep_research.api.main import app
+    from open_deep_research.api.deps import set_config
+    from open_deep_research.api.config import ApiConfig
+
+    cfg = ApiConfig(api_key="test-key-123")
+    set_config(cfg)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/health")
+        assert resp.status_code == 200
+
+        resp = await client.get("/research/abc")
+        assert resp.status_code == 401
+
+        resp = await client.get("/research/abc", headers={"X-API-Key": "wrong-key"})
+        assert resp.status_code == 401
+
+        resp = await client.get("/research/abc", headers={"X-API-Key": "test-key-123"})
+        assert resp.status_code == 404
+
+    set_config(ApiConfig())
+
+
+def test_openapi_schema_is_valid():
+    from open_deep_research.api.main import app
+    schema = app.openapi()
+    assert "openapi" in schema
+    assert "info" in schema
+    assert "paths" in schema
+    assert len(schema["paths"]) >= 13
+
+
+@pytest.mark.asyncio
+async def test_health_response_shape():
+    from open_deep_research.api.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body, dict)
+
+@pytest.mark.asyncio
+async def test_start_research_no_body():
+    from open_deep_research.api.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/research", json={})
+        assert resp.status_code == 422

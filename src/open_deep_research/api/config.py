@@ -10,3 +10,4 @@ class ApiConfig(BaseModel):
     api_db_path: str = "research.db"
     api_key: str | None = None
     max_concurrent_runs: int = 3
+    api_keys: dict[str, dict[str, str | list[str]]] = {}

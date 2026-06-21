@@ -19,6 +19,7 @@ def test_abc_has_abstract_methods():
         "save_checkpoint", "load_checkpoint",
         "save_report", "get_report",
         "save_memory", "load_memory",
+        "list_memory_keys",
         "list_webhooks", "save_webhook", "delete_webhook",
     ]
     for m in methods:
@@ -152,6 +153,81 @@ async def test_sqlite_idempotency(tmp_path):
         assert run_id1 == run_id2
         run_id3 = await repo.create_run("q", {}, idempotency_key="key-2")
         assert run_id3 != run_id1
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_get_nonexistent_run(tmp_path):
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        run = await repo.get_run("nonexistent")
+        assert run is None
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_update_status_with_completion_time(tmp_path):
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        run_id = await repo.create_run("q", {})
+        await repo.update_run_status(run_id, "running")
+        run = await repo.get_run(run_id)
+        assert run.status == "running"
+        assert run.completed_at is None
+        await repo.update_run_status(run_id, "completed")
+        run = await repo.get_run(run_id)
+        assert run.status == "completed"
+        assert run.completed_at is not None
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_progress_empty_after_high_seq(tmp_path):
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        run_id = await repo.create_run("q", {})
+        events = await repo.progress_after(run_id, 999)
+        assert events == []
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_multiple_runs(tmp_path):
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        id1 = await repo.create_run("q1", {})
+        id2 = await repo.create_run("q2", {})
+        assert id1 != id2
+        run1 = await repo.get_run(id1)
+        run2 = await repo.get_run(id2)
+        assert run1.query == "q1"
+        assert run2.query == "q2"
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_memory_overwrite(tmp_path):
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        await repo.save_memory("ns", "key", {"v": 1})
+        await repo.save_memory("ns", "key", {"v": 2})
+        loaded = await repo.load_memory("ns", "key")
+        assert loaded["v"] == 2
     finally:
         await repo.close()
 

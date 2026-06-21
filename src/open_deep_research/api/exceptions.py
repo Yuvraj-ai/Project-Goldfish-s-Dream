@@ -22,3 +22,8 @@ class ConflictError(APIError):
 class AuthError(APIError):
     def __init__(self, detail: str = "Unauthorized") -> None:
         super().__init__(detail, "unauthorized", 401)
+
+
+class ForbiddenError(APIError):
+    def __init__(self, detail: str = "Forbidden") -> None:
+        super().__init__(detail, "forbidden", 403)
