@@ -123,12 +123,45 @@ uvx langgraph dev
 ```
 
 This opens a visual graph editor at `http://localhost:2024` where you can:
-- See the full research graph visually
+- See the full research graph visually (19 nodes)
 - Step through nodes manually
 - Inspect state at each step
 - Debug research flow
 
-### Option B: Python API
+### Option B: REST API Server
+
+```bash
+cd open_deep_research
+ENABLE_REST_API=true API_KEY=test-key .venv/bin/python -m open_deep_research.api.main
+```
+
+```bash
+# In another terminal:
+curl -X POST http://localhost:8000/research \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: test-key" \
+  -d '{"query": "Compare React vs Vue for enterprise apps"}'
+
+# Stream SSE progress
+curl -N http://localhost:8000/research/{run_id}/stream
+
+# Get final report
+curl http://localhost:8000/research/{run_id}/report
+
+# Export in different formats
+curl http://localhost:8000/research/{run_id}/export/markdown
+
+# Metrics
+curl localhost:8000/metrics
+
+# Health check
+curl localhost:8000/health
+
+# OpenAPI docs
+curl localhost:8000/docs
+```
+
+### Option C: Python API (Direct Invocation)
 
 ```python
 import asyncio
@@ -145,34 +178,6 @@ async def main():
         }
     )
     print(result.get("final_report", "No report generated"))
-
-asyncio.run(main())
-```
-
-### Option C: Using Google Gemini (No OpenAI/Anthropic needed)
-
-```python
-import asyncio
-from open_deep_research.deep_researcher import deep_researcher
-
-async def main():
-    result = await deep_researcher.ainvoke(
-        {"messages": [{"role": "user", "content": "Compare React vs Vue for enterprise apps"}]},
-        config={
-            "configurable": {
-                "research_model": "google_genai:gemini-2.5-flash",
-                "compression_model": "google_genai:gemini-2.5-flash",
-                "final_report_model": "google_genai:gemini-2.5-flash",
-                "summarization_model": "google_genai:gemini-2.5-flash",
-                "search_api": "tavily",
-                "max_researcher_iterations": 4,
-                "max_concurrent_research_units": 3,
-            }
-        }
-    )
-    report = result.get("final_report", "")
-    print(f"Report length: {len(report)} chars")
-    print(report[:1000])
 
 asyncio.run(main())
 ```
@@ -208,6 +213,23 @@ cd open_deep_research
 .venv/bin/python -m pytest tests/test_diversity.py -v       # Source diversity (15 tests)
 .venv/bin/python -m pytest tests/test_document_reader.py -v # Document reader (10 tests)
 .venv/bin/python -m pytest tests/test_perspectives.py -v    # STORM perspectives (14 tests)
+
+# Phase 3 tests
+.venv/bin/python -m pytest tests/test_citation_verifier.py -v   # Citation verification (5 tests)
+.venv/bin/python -m pytest tests/test_report_profiles.py -v    # Report profiles (8 tests)
+.venv/bin/python -m pytest tests/test_citation.py -v           # Citation styles (12 tests)
+.venv/bin/python -m pytest tests/test_exporters.py -v          # Multi-format export (8 tests)
+.venv/bin/python -m pytest tests/test_reviewers.py -v          # Reviewer loop (9 tests)
+
+# Phase 4 tests
+.venv/bin/python -m pytest tests/test_repository.py -v    # Repository ABC + SQLite (15 tests)
+.venv/bin/python -m pytest tests/test_runner.py -v        # Research runner (8 tests)
+.venv/bin/python -m pytest tests/test_streaming.py -v     # SSE streaming (7 tests)
+.venv/bin/python -m pytest tests/test_memory.py -v        # Cross-session memory (12 tests)
+.venv/bin/python -m pytest tests/test_webhooks.py -v      # Webhook notification (10 tests)
+.venv/bin/python -m pytest tests/test_plugins.py -v       # Plugin system (12 tests)
+.venv/bin/python -m pytest tests/test_model_router.py -v  # Model router (10 tests)
+.venv/bin/python -m pytest tests/test_routes.py -v        # API routes (15 tests)
 ```
 
 ### Run Tests by Phase
@@ -218,12 +240,30 @@ cd open_deep_research
 
 # Phase 2 only (90 tests)
 .venv/bin/python -m pytest tests/test_classifier.py tests/test_search_aggregator.py tests/test_academic_search.py tests/test_diversity.py tests/test_document_reader.py tests/test_perspectives.py -v
+
+# Phase 3 only (42 tests)
+.venv/bin/python -m pytest tests/test_citation_verifier.py tests/test_report_profiles.py tests/test_citation.py tests/test_exporters.py tests/test_reviewers.py -v
+
+# Phase 4 only (79 tests)
+.venv/bin/python -m pytest tests/test_repository.py tests/test_runner.py tests/test_streaming.py tests/test_memory.py tests/test_webhooks.py tests/test_plugins.py tests/test_model_router.py tests/test_routes.py -v
 ```
 
 ### Run with Coverage
 
 ```bash
-.venv/bin/python -m pytest tests/ --tb=short -q
+.venv/bin/python -m pytest tests/ --cov=src/open_deep_research --cov-report=term
+```
+
+### Lint
+
+```bash
+.venv/bin/ruff check src/open_deep_research/ --ignore=D1
+```
+
+### Full Verification Script
+
+```bash
+bash scripts/verify.sh
 ```
 
 ### Quick Smoke Test
@@ -234,7 +274,7 @@ cd open_deep_research
 
 Expected output:
 ```
-235 passed, X warnings in Y.Zs
+350 passed, X warnings in Y.Zs
 ```
 
 ---
@@ -247,26 +287,61 @@ Expected output:
 open_deep_research/
 ├── .env                          # API keys (gitignored)
 ├── .env.example                  # Template for .env
-├── pyproject.toml                # Project config, deps, ruff, pytest
+├── pyproject.toml                # Project config, deps, ruff, pytest, coverage
 ├── langgraph.json                # LangGraph Studio config
+├── LICENSE                       # MIT License
+├── scripts/
+│   └── verify.sh                 # Combined lint + audit + test runner
+├── docs/
+│   └── ops/
+│       └── runbook.md            # Operations runbook
 ├── src/open_deep_research/       # Main source code
-│   ├── deep_researcher.py        # Main LangGraph graph (entry point)
+│   ├── deep_researcher.py        # Main LangGraph graph (19 nodes)
 │   ├── configuration.py          # All config settings
 │   ├── state.py                  # State definitions & Pydantic models
 │   ├── prompts.py                # System prompts
-│   ├── utils.py                  # Tools, search, helpers (1200+ lines)
-│   ├── evidence.py               # Evidence extraction & deduplication
-│   ├── exceptions.py             # 6-type exception hierarchy
-│   ├── telemetry.py              # Cost tracking & budget enforcement
-│   ├── research_cache.py         # Mode-aware TTL caching
-│   ├── sanitization.py           # 56-pattern prompt injection defense
-│   ├── governor.py               # Rate limiting & circuit breaker
-│   ├── eval_harness.py           # Evaluation framework
-│   ├── search_aggregator.py      # Multi-provider search (NEW - Phase 2)
-│   ├── document_reader.py        # PDF parsing & agentic reading (NEW - Phase 2)
-│   ├── perspectives.py           # STORM-style multi-perspective (NEW - Phase 2)
-│   └── state_legacy.py           # Legacy state backup
-├── tests/                        # 235 tests across 14 test files
+│   ├── utils.py                  # Tools, search, helpers
+│   ├── evidence.py               # Evidence extraction & dedup (Phase 1)
+│   ├── exceptions.py             # 6-type exception hierarchy (Phase 1)
+│   ├── telemetry.py              # Cost tracking & budget (Phase 1)
+│   ├── research_cache.py         # Mode-aware TTL caching (Phase 1)
+│   ├── sanitization.py           # 56-pattern injection defense (Phase 1)
+│   ├── governor.py               # Rate limiting & circuit breaker (Phase 1)
+│   ├── eval_harness.py           # Evaluation framework (Phase 1)
+│   ├── search_aggregator.py      # Multi-provider search (Phase 2)
+│   ├── document_reader.py        # PDF parsing & agentic reading (Phase 2)
+│   ├── perspectives.py           # STORM multi-perspective (Phase 2)
+│   ├── citation_verifier.py      # HTTP citation verification (Phase 3)
+│   ├── report_profiles.py        # 8 built-in report profiles (Phase 3)
+│   ├── citation.py               # 6 citation styles + BibTeX (Phase 3)
+│   ├── exporters.py              # Multi-format export (Phase 3)
+│   ├── reviewers.py              # 4 QA reviewer agents (Phase 3)
+│   ├── state_legacy.py           # Legacy state backup
+│   └── api/                      # REST API server (Phase 4)
+│       ├── main.py               # FastAPI app with middleware
+│       ├── config.py             # API configuration
+│       ├── deps.py               # Dependencies, auth, rate limiting
+│       ├── exceptions.py         # API error hierarchy
+│       ├── models.py             # Pydantic models
+│       ├── repository.py         # Repository ABC
+│       ├── repository_sqlite.py  # SQLite implementation
+│       ├── runner.py             # Background graph runner
+│       ├── streaming.py          # SSE progress streaming
+│       ├── memory.py             # Cross-session memory service
+│       ├── webhooks.py           # Webhook notification service
+│       ├── model_router.py       # Multi-model routing
+│       ├── metrics.py            # Prometheus metrics collector (Phase 5)
+│       ├── plugins/              # Plugin system
+│       │   ├── base.py           # SourcePlugin ABC
+│       │   ├── loader.py         # Plugin directory scanner
+│       │   ├── web_search.py     # Web search stub
+│       │   ├── academic.py       # Academic search stub
+│       │   └── document.py       # Document source stub
+│       └── routes/               # Route handlers
+│           ├── research.py        # Research CRUD + streaming
+│           ├── memory.py          # Memory endpoints
+│           └── admin.py           # Admin endpoints (webhooks, plugins)
+├── tests/                        # 350 tests across 24 test files
 │   ├── test_exceptions.py        # 11 tests
 │   ├── test_state.py             # 20 tests
 │   ├── test_evidence.py          # 26 tests
@@ -281,6 +356,19 @@ open_deep_research/
 │   ├── test_diversity.py         # 15 tests (Phase 2)
 │   ├── test_document_reader.py   # 10 tests (Phase 2)
 │   ├── test_perspectives.py      # 14 tests (Phase 2)
+│   ├── test_citation_verifier.py # 5 tests (Phase 3)
+│   ├── test_report_profiles.py   # 8 tests (Phase 3)
+│   ├── test_citation.py          # 12 tests (Phase 3)
+│   ├── test_exporters.py         # 8 tests (Phase 3)
+│   ├── test_reviewers.py         # 9 tests (Phase 3)
+│   ├── test_repository.py        # 15 tests (Phase 4)
+│   ├── test_runner.py            # 8 tests (Phase 4)
+│   ├── test_streaming.py         # 7 tests (Phase 4)
+│   ├── test_memory.py            # 12 tests (Phase 4)
+│   ├── test_webhooks.py          # 10 tests (Phase 4)
+│   ├── test_plugins.py           # 12 tests (Phase 4)
+│   ├── test_model_router.py      # 10 tests (Phase 4)
+│   ├── test_routes.py            # 15 tests (Phase 4)
 │   └── golden_set/               # Evaluation seed queries
 │       ├── seed_queries.json
 │       └── baseline_scores.json
@@ -296,37 +384,60 @@ open_deep_research/
 START
   │
   ▼
-clarify_with_user          ── Ask clarifying questions if needed
+clarify_with_user           ── Ask clarifying questions
   │
   ▼
-parse_document             ── Parse uploaded PDFs (if any)
+parse_document              ── Parse uploaded PDFs
   │
   ▼
-write_research_brief       ── Transform messages into research brief
+write_research_brief        ── Transform into research brief
   │
   ▼
-classify_research_request  ── Classify into research mode (comparison, market, etc.)
+classify_research_request   ── Classify research mode
   │
   ▼
-generate_research_plan     ── Create detailed plan with subquestions
+generate_research_plan      ── Create plan with subquestions
   │
   ▼
-optional_plan_review       ── Human-in-the-loop review (if enabled)
+optional_plan_review        ── HITL review (if enabled)
   │
   ▼
-research_supervisor        ── Orchestrates parallel researchers
-  │
-  ├── researcher_1          ── Individual researcher subgraph
-  ├── researcher_2          ──   ├── search (Tavily / academic DBs)
-  ├── ...                   │   ├── think_tool (reflection)
-  └── researcher_N          │   └── compress_research
+research_supervisor         ── Orchestrates parallel researchers
+  │  ├── researcher_1        ── search → think → compress
+  │  ├── researcher_2
+  │  └── ...
   │
   ▼
-final_report_generation    ── Generate comprehensive final report
+extract_structured_evidence ── Build EvidenceCards (Phase 1)
+  │
+  ▼
+compress_research           ── Dedup & compress evidence
+  │
+  ▼
+verify_citations            ── HTTP citation checks (Phase 3)
+  │
+  ▼
+generate_report_outline     ── Map evidence to sections
+  │
+  ▼
+write_sections_parallel     ── Parallel section writers (Phase 3)
+  │
+  ▼
+compile_report              ── Stitch sections + TOC + bib
+  │
+  ▼
+final_review                ── 4 parallel reviewers (Phase 3)
+  │
+  ├── [score < threshold] ── rewrite_sections → compile_report (max 2x)
+  │
+  ▼
+export_report               ── Multi-format export (Phase 3)
   │
   ▼
 END
 ```
+
+**Total: 19 nodes (5 Phase 1, 7 Phase 2, 7 Phase 3)**
 
 ---
 
@@ -408,16 +519,38 @@ config = {
 | **Document Reader** | `document_reader.py` | PDF parsing, section extraction, evidence card generation |
 | **STORM Perspectives** | `perspectives.py` | Multi-perspective research with coverage matrix |
 
-### Testing Components
+### Phase 3 Components
 
-| Component | Test File | What it Tests |
-|-----------|-----------|---------------|
-| Classifier | `test_classifier.py` | ResearchMode enum, config defaults, state fields |
-| Search Aggregator | `test_search_aggregator.py` | Dedup, provider fallback, parallel search |
-| Academic Search | `test_academic_search.py` | All 4 academic APIs (mocked with respx) |
-| Diversity | `test_diversity.py` | Domain extraction, date parsing, recency boost |
-| Document Reader | `test_document_reader.py` | PDF parsing, evidence extraction |
-| Perspectives | `test_perspectives.py` | Perspective generation, coverage matrix |
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| **Citation Verifier** | `citation_verifier.py` | HTTP citation checks with concurrency semaphore |
+| **Report Profiles** | `report_profiles.py` | 8 built-in profiles (executive brief, deep research, academic, etc.) |
+| **Section Writers** | `deep_researcher.py` | Parallel section generation with structured output |
+| **Citation Styles** | `citation.py` | 6 styles (APA, MLA, Chicago, Harvard, IEEE, vanilla) + BibTeX |
+| **Export Pipeline** | `exporters.py` | Markdown, HTML, PDF, DOCX, JSON, BibTeX export |
+| **Reviewers** | `reviewers.py` | 4 QA reviewers (coverage, evidence, contradiction, style) |
+
+### Phase 4 Components
+
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| **REST API** | `api/main.py` | FastAPI server with 15 endpoints, middleware |
+| **Repository** | `api/repository.py` | ABC for persistence (SQLite default) |
+| **Runner** | `api/runner.py` | Background asyncio graph execution |
+| **Streaming** | `api/streaming.py` | SSE progress with Last-Event-ID replay |
+| **Memory** | `api/memory.py` | Cross-session topic/preference storage |
+| **Webhooks** | `api/webhooks.py` | HMAC-signed event notifications |
+| **Model Router** | `api/model_router.py` | 3-tier multi-model routing |
+| **Plugins** | `api/plugins/` | SourcePlugin ABC + directory loader |
+| **Auth** | `api/deps.py` | API key validation + scope-based auth |
+
+### Phase 5 Components
+
+| Component | Module | Purpose |
+|-----------|--------|---------|
+| **Metrics** | `api/metrics.py` | Prometheus-compatible in-process metrics |
+| **Runbook** | `docs/ops/runbook.md` | Operations runbook for failure modes |
+| **Verify Script** | `scripts/verify.sh` | Combined lint + audit + test runner |
 
 ---
 
@@ -526,6 +659,8 @@ print('Nodes:', list(deep_researcher.nodes.keys()))
 |---------|--------------|
 | `uvx langgraph dev` | Start LangGraph Studio |
 | `.venv/bin/python -m pytest tests/ -x -q` | Run all tests (fast) |
-| `.venv/bin/python -m pytest tests/ -v` | Run all tests (verbose) |
-| `.venv/bin/python -m ruff check src/ --select E,F` | Lint for errors |
+| `.venv/bin/python -m pytest tests/ --cov=src/open_deep_research --cov-fail-under=60` | Run tests with coverage gate |
+| `.venv/bin/ruff check src/open_deep_research/ --ignore=D1` | Lint (skip docstring warnings) |
+| `bash scripts/verify.sh` | Full verification: lint + audit + tests |
+| `ENABLE_REST_API=true API_KEY=test-key .venv/bin/python -m open_deep_research.api.main` | Start API server |
 | `.venv/bin/python -c "from open_deep_research.deep_researcher import deep_researcher; print('OK')"` | Verify graph compiles |

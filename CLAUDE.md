@@ -1,66 +1,42 @@
 # Open Deep Research Repository Overview
 
 ## Project Description
-Open Deep Research is a configurable, fully open-source deep research agent that works across multiple model providers, search tools, and MCP (Model Context Protocol) servers. It enables automated research with parallel processing and comprehensive report generation.
+Enhanced version of LangChain's `open_deep_research` — a production-grade, evidence-first deep research platform. 19-node LangGraph graph with structured EvidenceCards, citation verification, adaptive research strategies, QA reviewer loops, REST API, and multi-format export.
+
+## Key Stats
+- **350 tests** across 24 test files
+- **64% test coverage** (gate: 60%)
+- **19 graph nodes** across 5 phases
+- **3 commits** on `dev/ph1-3` for Phase 5
 
 ## Repository Structure
 
-### Root Directory
-- `README.md` - Comprehensive project documentation with quickstart guide
-- `pyproject.toml` - Python project configuration and dependencies
-- `langgraph.json` - LangGraph configuration defining the main graph entry point
-- `uv.lock` - UV package manager lock file
-- `LICENSE` - MIT license
-- `.env.example` - Environment variables template (not tracked)
-
 ### Core Implementation (`src/open_deep_research/`)
-- `deep_researcher.py` - Main LangGraph implementation (entry point: `deep_researcher`)
-- `configuration.py` - Configuration management and settings
-- `state.py` - Graph state definitions and data structures  
+- `deep_researcher.py` - Main LangGraph graph (19 nodes, entry point: `deep_researcher`)
+- `configuration.py` - Configuration management (feature flags, model/router, plugin dirs)
+- `state.py` - Graph state definitions, Pydantic models (EvidenceCard, Source, etc.)
 - `prompts.py` - System prompts and prompt templates
-- `utils.py` - Utility functions and helpers
-- `files/` - Research output and example files
+- `utils.py` - Utility functions, academic DB wrappers, helpers
+- **Phase 1:** `evidence.py`, `exceptions.py`, `telemetry.py`, `research_cache.py`, `sanitization.py`, `governor.py`, `eval_harness.py`, `state_legacy.py`
+- **Phase 2:** `search_aggregator.py`, `document_reader.py`, `perspectives.py`
+- **Phase 3:** `citation_verifier.py`, `report_profiles.py`, `citation.py`, `exporters.py`, `reviewers.py`
+- **Phase 4:** `api/` — FastAPI server, repository, runner, streaming, memory, webhooks, model router, plugins, routes
+- **Phase 5:** `api/metrics.py` — Prometheus metrics collector
 
-### Legacy Implementations (`src/legacy/`)
-Contains two earlier research implementations:
-- `graph.py` - Plan-and-execute workflow with human-in-the-loop
-- `multi_agent.py` - Supervisor-researcher multi-agent architecture
-- `legacy.md` - Documentation for legacy implementations
-- `CLAUDE.md` - Legacy-specific Claude instructions
-- `tests/` - Legacy-specific tests
+### Tests (`tests/`)
+- 24 test files covering all 5 phases, 350 tests total
+- `golden_set/` — 10 evaluation queries with baseline scores
 
-### Security (`src/security/`)
-- `auth.py` - Authentication handler for LangGraph deployment
-
-### Testing (`tests/`)
-- `run_evaluate.py` - Main evaluation script configured to run on deep research bench
-- `evaluators.py` - Specialized evaluation functions  
-- `prompts.py` - Evaluation prompts and criteria
-- `pairwise_evaluation.py` - Comparative evaluation tools
-- `supervisor_parallel_evaluation.py` - Multi-threaded evaluation
-
-### Examples (`examples/`)
-- `arxiv.md` - ArXiv research example
-- `pubmed.md` - PubMed research example
-- `inference-market.md` - Inference market analysis examples
-
-## Key Technologies
-- **LangGraph** - Workflow orchestration and graph execution
-- **LangChain** - LLM integration and tool calling
-- **Multiple LLM Providers** - OpenAI, Anthropic, Google, Groq, DeepSeek support
-- **Search APIs** - Tavily, OpenAI/Anthropic native search, DuckDuckGo, Exa
-- **MCP Servers** - Model Context Protocol for extended capabilities
+### Other
+- `scripts/verify.sh` — Combined lint + audit + test runner
+- `docs/ops/runbook.md` — Operations runbook
+- `src/legacy/` — Original ODR implementations (graph.py, multi_agent.py)
+- `src/security/auth.py` — LangGraph deployment auth
 
 ## Development Commands
-- `uvx langgraph dev` - Start development server with LangGraph Studio
-- `python tests/run_evaluate.py` - Run comprehensive evaluations
-- `ruff check` - Code linting
-- `mypy` - Type checking
-
-## Configuration
-All settings configurable via:
-- Environment variables (`.env` file)
-- Web UI in LangGraph Studio
-- Direct configuration modification
-
-Key settings include model selection, search API choice, concurrency limits, and MCP server configurations.
+- `uvx langgraph dev` — Start LangGraph Studio
+- `.venv/bin/python -m pytest tests/ -x -q` — Run tests
+- `.venv/bin/python -m pytest tests/ --cov=src/open_deep_research --cov-fail-under=60` — Tests + coverage gate
+- `.venv/bin/ruff check src/open_deep_research/ --ignore=D1` — Lint
+- `bash scripts/verify.sh` — Full verification
+- `ENABLE_REST_API=true API_KEY=test-key .venv/bin/python -m open_deep_research.api.main` — Start API server
