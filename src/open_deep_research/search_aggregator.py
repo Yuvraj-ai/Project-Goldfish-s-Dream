@@ -39,9 +39,10 @@ class SearchProviderConfig(BaseModel):
 class SearchAggregator:
     """Aggregates search results from multiple providers with deduplication."""
 
-    def __init__(self, providers: List[SearchProviderConfig], search_functions: Dict[str, Callable]):
+    def __init__(self, providers: List[SearchProviderConfig], search_functions: Dict[str, Callable], plugin_loader=None):
         self.providers = sorted(providers, key=lambda p: p.priority)
         self.search_functions = search_functions
+        self.plugin_loader = plugin_loader
 
     async def search(self, query: str, source_types: List[str] | None = None, max_results: int = 20) -> List[SearchResult]:
         """Fire parallel searches across enabled providers, deduplicate by URL."""
@@ -74,6 +75,24 @@ class SearchAggregator:
                 logger.warning(f"Search failed for {matching_providers[i].name}: {results}")
                 continue
             all_results.extend(results)
+
+        if self.plugin_loader:
+            plugins = self.plugin_loader.list()
+            for plugin in plugins:
+                try:
+                    plugin_results = await plugin.search(query, max_results)
+                    for pr in plugin_results:
+                        all_results.append(SearchResult(
+                            title=pr.title,
+                            url=pr.url,
+                            snippet=pr.snippet,
+                            source_type=pr.source_type,
+                            provider=f"plugin:{plugin.name}",
+                            date=pr.published_date,
+                            relevance_score=pr.credibility_score,
+                        ))
+                except Exception as e:
+                    logger.warning("Plugin %s search failed: %s", plugin.name, e)
 
         deduplicated = self._deduplicate(all_results)
         deduplicated.sort(key=lambda r: r.relevance_score, reverse=True)

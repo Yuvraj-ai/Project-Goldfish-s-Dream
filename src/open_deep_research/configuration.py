@@ -483,6 +483,12 @@ class Configuration(BaseModel):
             }
         }
     )
+    # Plugin directories
+    plugin_directories: list[str] = Field(
+        default=[],
+        description="Directories to scan for custom source plugins",
+    )
+
     # Budget Configuration
     max_total_tokens: int = Field(
         default=500000,

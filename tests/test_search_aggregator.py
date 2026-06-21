@@ -1,5 +1,6 @@
 """Tests for multi-provider search aggregator."""
 import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 from open_deep_research.search_aggregator import (
     SearchAggregator,
@@ -106,3 +107,39 @@ class TestSearchAggregator:
         aggregator = SearchAggregator(providers, {"filtered": search_fn, "always": search_fn})
         await aggregator.search("general query")
         assert call_log.count("called") == 1  # only "always" matches
+
+
+@pytest.mark.asyncio
+async def test_search_aggregator_with_plugins():
+    from open_deep_research.api.plugins.base import SourcePlugin, NormalizedResult
+
+    class MockPlugin(SourcePlugin):
+        name = "mock_plugin"
+
+        async def search(self, query: str, max_results: int = 10) -> list[NormalizedResult]:
+            return [NormalizedResult(
+                url="https://plugin.example.com/result",
+                title="Plugin Result",
+                snippet="Plugin snippet",
+                source_type="api",
+            )]
+
+        async def fetch(self, url: str):
+            from open_deep_research.api.plugins.base import ContentResult
+            return ContentResult(url=url, content="content")
+
+    from open_deep_research.api.plugins.loader import PluginLoader
+    loader = PluginLoader()
+    loader._plugins = {"mock_plugin": MockPlugin()}
+
+    config = SearchProviderConfig(name="test", priority=100, enabled=True)
+
+    async def dummy_search(q):
+        return [SearchResult(title="Web", url="https://web.example.com", snippet="web", source_type="web", provider="test")]
+
+    aggregator = SearchAggregator(providers=[config], search_functions={"test": dummy_search}, plugin_loader=loader)
+    results = await aggregator.search("test query")
+
+    urls = [r.url for r in results]
+    assert "https://plugin.example.com/result" in urls
+    assert "https://web.example.com" in urls
