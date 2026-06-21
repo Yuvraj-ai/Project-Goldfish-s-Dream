@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -14,6 +14,8 @@ from open_deep_research.api.runner import ResearchRunner
 from open_deep_research.api.streaming import watch_run
 
 router = APIRouter(prefix="/research", tags=["research"])
+
+MAX_QUERY_LENGTH = 2000
 
 
 class ResearchRequest(BaseModel):
@@ -28,6 +30,11 @@ async def start_research(
     repo: ResearchRepository = Depends(get_repo),
     _: None = Depends(verify_api_key),
 ) -> dict:
+    if len(body.query) > MAX_QUERY_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Query too long (max {MAX_QUERY_LENGTH} characters)",
+        )
     run_id = await ResearchRunner.start(
         repo, body.query, body.config, body.idempotency_key,
     )

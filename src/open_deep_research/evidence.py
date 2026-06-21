@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from functools import lru_cache
 from typing import Dict, List, Tuple
 
 from open_deep_research.state import ConflictFlag, EvidenceCard, Source
@@ -80,19 +81,20 @@ def compute_recency_score(
         return max(0.0, 1.0 - (decay_days / (window * 2)))
 
 
-def _claims_similar(claim_a: str, claim_b: str, threshold: float = 0.7) -> bool:
-    """Check if two claims are semantically similar using Jaccard similarity."""
+@lru_cache(maxsize=4096)
+def _jaccard_similarity(claim_a: str, claim_b: str) -> float:
     words_a = set(re.findall(r'\w+', claim_a.lower()))
     words_b = set(re.findall(r'\w+', claim_b.lower()))
-
     if not words_a or not words_b:
-        return False
-
+        return 0.0
     intersection = words_a & words_b
     union = words_a | words_b
-    jaccard = len(intersection) / len(union)
+    return len(intersection) / len(union)
 
-    return jaccard >= threshold
+
+def _claims_similar(claim_a: str, claim_b: str, threshold: float = 0.7) -> bool:
+    """Check if two claims are semantically similar using Jaccard similarity."""
+    return _jaccard_similarity(claim_a, claim_b) >= threshold
 
 
 def extract_evidence(

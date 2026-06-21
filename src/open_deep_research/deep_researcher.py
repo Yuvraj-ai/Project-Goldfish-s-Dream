@@ -1280,12 +1280,27 @@ async def final_review(state: AgentState, config: RunnableConfig) -> dict:
     contradiction_reviewer = ContradictionReviewer()
     style_reviewer = StyleReviewer()
 
-    coverage_feedback = await coverage_reviewer.review(final_report, research_plan)
-    evidence_feedback = await evidence_reviewer.review(final_report, evidence_cards, citation_checks)
-    contradiction_feedback = await contradiction_reviewer.review(final_report)
-    style_feedback = await style_reviewer.review(final_report, profile)
+    review_tasks = [
+        coverage_reviewer.review(final_report, research_plan),
+        evidence_reviewer.review(final_report, evidence_cards, citation_checks),
+        contradiction_reviewer.review(final_report),
+        style_reviewer.review(final_report, profile),
+    ]
+    review_results = await asyncio.gather(*review_tasks, return_exceptions=True)
 
-    all_feedback = [coverage_feedback, evidence_feedback, contradiction_feedback, style_feedback]
+    coverage_feedback, evidence_feedback, contradiction_feedback, style_feedback = (
+        r if not isinstance(r, Exception) else None for r in review_results
+    )
+    if coverage_feedback is None:
+        coverage_feedback = type("ReviewFeedback", (), {"score": 0.0, "issues": [], "rewrite_instructions": [], "reviewer_name": "coverage"})()
+    if evidence_feedback is None:
+        evidence_feedback = type("ReviewFeedback", (), {"score": 0.0, "issues": [], "rewrite_instructions": [], "reviewer_name": "evidence"})()
+    if contradiction_feedback is None:
+        contradiction_feedback = type("ReviewFeedback", (), {"score": 0.0, "issues": [], "rewrite_instructions": [], "reviewer_name": "contradiction"})()
+    if style_feedback is None:
+        style_feedback = type("ReviewFeedback", (), {"score": 0.0, "issues": [], "rewrite_instructions": [], "reviewer_name": "style"})()
+
+    all_feedback = [f for f in [coverage_feedback, evidence_feedback, contradiction_feedback, style_feedback] if f.score is not None]
     avg_score = sum(f.score for f in all_feedback) / len(all_feedback)
 
     review_result = {
@@ -1328,7 +1343,6 @@ async def rewrite_sections(state: AgentState, config: RunnableConfig) -> dict:
     outline = state.get("report_outline", {})
     sections = outline.get("sections", [])
     evidence_cards = state.get("evidence_cards", [])
-    evidence_allocation = outline.get("evidence_allocation", {})
     subquestions = outline.get("subquestions", [])
     profile_name = outline.get("profile", "deep_research_report")
     profile = get_profile(profile_name) or get_profile("deep_research_report")

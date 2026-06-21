@@ -180,3 +180,12 @@ async def test_start_research_no_body():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post("/research", json={})
         assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint():
+    from open_deep_research.api.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/metrics")
+        assert resp.status_code == 200

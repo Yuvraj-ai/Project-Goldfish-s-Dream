@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from fastapi import Header
-from fastapi import status as http_status
-from fastapi import HTTPException
 
 from open_deep_research.api.config import ApiConfig
 from open_deep_research.api.exceptions import AuthError, ForbiddenError

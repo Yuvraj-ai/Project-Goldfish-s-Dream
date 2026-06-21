@@ -105,7 +105,7 @@ python -m pytest tests/ -x -q
 python -m pytest tests/test_citation_verifier.py -v
 ```
 
-**Test coverage:** 277 tests across 19 test files
+**Test coverage:** 349+ tests across 24 test files
 
 ## Project Structure
 
@@ -129,8 +129,81 @@ open_deep_research/
 │   ├── governor.py             # Rate limiting + circuit breaker
 │   ├── telemetry.py            # Budget tracking
 │   ├── research_cache.py       # Mode-aware caching
-│   └── exceptions.py           # Exception taxonomy
-└── tests/                      # 277 tests
+│   ├── exceptions.py           # Exception taxonomy
+│   ├── api/
+│   │   ├── main.py             # FastAPI app with middleware
+│   │   ├── config.py           # API configuration
+│   │   ├── deps.py             # Dependencies, auth, rate limiting
+│   │   ├── exceptions.py       # API error hierarchy
+│   │   ├── models.py           # Pydantic models
+│   │   ├── repository.py       # Repository ABC
+│   │   ├── repository_sqlite.py # SQLite implementation
+│   │   ├── runner.py           # Background graph runner
+│   │   ├── streaming.py        # SSE progress streaming
+│   │   ├── memory.py           # Cross-session memory service
+│   │   ├── webhooks.py         # Webhook notification service
+│   │   ├── model_router.py     # Multi-model routing
+│   │   ├── metrics.py          # Prometheus metrics collector
+│   │   ├── plugins/            # Plugin system (base, loader, stubs)
+│   │   └── routes/             # Route handlers (research, memory, admin)
+│   └── scripts/                # Utility scripts
+└── tests/                      # 349+ tests
+```
+
+## API Server
+
+Open Deep Research includes a FastAPI server for programmatic access.
+
+### Quickstart
+
+```bash
+# Install with API dependencies
+pip install open-deep-research[api]
+
+# Start the server
+python -m open_deep_research.api.main
+
+# Or with configuration
+ENABLE_REST_API=true API_KEY=sk-your-key python -m open_deep_research.api.main
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/research` | Start new research session |
+| GET | `/research/{id}` | Get run status |
+| GET | `/research/{id}/stream` | SSE progress stream |
+| GET | `/research/{id}/report` | Get final report |
+| GET | `/research/{id}/export/{fmt}` | Export report (markdown, html, pdf, docx) |
+| POST | `/research/{id}/cancel` | Cancel running research |
+| GET | `/memory` | List saved research topics |
+| GET | `/memory/{topic_hash}` | Load saved research |
+| POST | `/memory/feedback` | Save user preference |
+| POST | `/webhooks` | Register webhook |
+| GET | `/webhooks` | List webhooks |
+| DELETE | `/webhooks/{id}` | Remove webhook |
+| GET | `/plugins` | List registered plugins |
+| GET | `/health` | Health check |
+
+### Authentication
+
+Set `API_KEY` env var or `api_keys` in config. Pass via `X-API-Key` header.
+
+### Example
+
+```bash
+# Start a research session
+curl -X POST http://localhost:8000/research \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-key" \
+  -d '{"query": "Latest advances in transformer architectures"}'
+
+# Stream progress (SSE)
+curl -N http://localhost:8000/research/{run_id}/stream
+
+# Get the final report
+curl http://localhost:8000/research/{run_id}/report
 ```
 
 ## Key Design Decisions

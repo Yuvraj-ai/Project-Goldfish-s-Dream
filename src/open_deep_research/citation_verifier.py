@@ -22,6 +22,22 @@ class CitationVerifier:
             "Mozilla/5.0 (compatible; DeepResearchBot/1.0; "
             "+https://github.com/langchain-ai/open_deep_research)"
         )
+        self._shared_client: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._shared_client is None or self._shared_client.is_closed:
+            self._shared_client = httpx.AsyncClient(
+                timeout=self.timeout,
+                follow_redirects=True,
+                headers={"User-Agent": self.user_agent},
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
+        return self._shared_client
+
+    async def close(self) -> None:
+        if self._shared_client:
+            await self._shared_client.aclose()
+            self._shared_client = None
 
     async def _check_url(self, client: httpx.AsyncClient, url: str) -> dict:
         """Check a single URL. Try GET with stream=True (don't download body), fallback to HEAD."""
@@ -47,27 +63,19 @@ class CitationVerifier:
 
     async def verify_url(self, url: str) -> dict:
         """Check if URL is alive. Try GET first (sites block HEAD), fallback to HEAD."""
-        async with httpx.AsyncClient(
-            timeout=self.timeout,
-            follow_redirects=True,
-            headers={"User-Agent": self.user_agent},
-        ) as client:
-            return await self._check_url(client, url)
+        client = await self._get_client()
+        return await self._check_url(client, url)
 
     async def verify_batch(self, urls: List[str]) -> Dict[str, dict]:
         """Verify multiple URLs in parallel (bounded by semaphore)."""
-        async with httpx.AsyncClient(
-            timeout=self.timeout,
-            follow_redirects=True,
-            headers={"User-Agent": self.user_agent},
-        ) as client:
-            tasks = [self._check_url(client, url) for url in urls]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            return {
-                url: (
-                    result
-                    if isinstance(result, dict)
-                    else {"status": "unverified", "error": str(result)}
-                )
-                for url, result in zip(urls, results)
-            }
+        client = await self._get_client()
+        tasks = [self._check_url(client, url) for url in urls]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return {
+            url: (
+                result
+                if isinstance(result, dict)
+                else {"status": "unverified", "error": str(result)}
+            )
+            for url, result in zip(urls, results)
+        }
