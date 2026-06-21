@@ -53,7 +53,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["mypy>=1.11.1", "ruff>=0.6.1", "pip-audit>=2.7", "pytest-rerunfailures>=14.0"]
+dev = ["mypy>=1.11.1", "ruff>=0.6.1", "pip-audit>=2.7", "pytest-rerunfailures>=14.0", "pytest-cov>=7.0.0"]
 
 [build-system]
 requires = ["setuptools>=73.0.0", "wheel"]
@@ -93,6 +93,20 @@ lint.ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.coverage.run]
+source = ["src/open_deep_research"]
+omit = ["src/open_deep_research/api/plugins/__pycache__/*", "src/open_deep_research/state_legacy.py"]
+
+[tool.coverage.report]
+fail_under = 60
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
