@@ -45,5 +45,8 @@ class PluginLoader:
     def get(self, name: str) -> SourcePlugin | None:
         return self._plugins.get(name)
 
+    def register(self, name: str, plugin: SourcePlugin) -> None:
+        self._plugins[name] = plugin
+
     def list(self) -> list[SourcePlugin]:
         return list(self._plugins.values())

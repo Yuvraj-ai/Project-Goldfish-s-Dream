@@ -971,22 +971,25 @@ async def verify_citations(state: AgentState, config: RunnableConfig) -> dict:
         return {"citation_checks": []}
 
     verifier = CitationVerifier()
-    verification_results = await verifier.verify_batch(urls)
+    try:
+        verification_results = await verifier.verify_batch(urls)
 
-    citation_checks = []
-    for source in sources:
-        url = source.get("url", "")
-        result = verification_results.get(url, {"status": "unverified"})
+        citation_checks = []
+        for source in sources:
+            url = source.get("url", "")
+            result = verification_results.get(url, {"status": "unverified"})
 
-        check = CitationCheck(
-            claim="",
-            url=url,
-            status=result["status"],
-            problem="" if result["status"] == "alive" else f"URL {result['status']}",
-        )
-        citation_checks.append(check.model_dump())
+            check = CitationCheck(
+                claim="",
+                url=url,
+                status=result["status"],
+                problem="" if result["status"] == "alive" else f"URL {result['status']}",
+            )
+            citation_checks.append(check.model_dump())
 
-    return {"citation_checks": citation_checks}
+        return {"citation_checks": citation_checks}
+    finally:
+        await verifier.close()
 
 
 def _allocate_evidence(subquestions: list, evidence_cards: list) -> dict:

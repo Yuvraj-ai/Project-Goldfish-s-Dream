@@ -1,6 +1,6 @@
 """Tests for multi-provider search aggregator."""
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from open_deep_research.search_aggregator import (
     SearchAggregator,
@@ -111,7 +111,7 @@ class TestSearchAggregator:
 
 @pytest.mark.asyncio
 async def test_search_aggregator_with_plugins():
-    from open_deep_research.api.plugins.base import SourcePlugin, NormalizedResult
+    from open_deep_research.api.plugins.base import NormalizedResult, SourcePlugin
 
     class MockPlugin(SourcePlugin):
         name = "mock_plugin"
@@ -130,7 +130,7 @@ async def test_search_aggregator_with_plugins():
 
     from open_deep_research.api.plugins.loader import PluginLoader
     loader = PluginLoader()
-    loader._plugins = {"mock_plugin": MockPlugin()}
+    loader.register("mock_plugin", MockPlugin())
 
     config = SearchProviderConfig(name="test", priority=100, enabled=True)
 
@@ -147,8 +147,11 @@ async def test_search_aggregator_with_plugins():
 
 @pytest.mark.asyncio
 async def test_search_aggregator_plugin_failure():
-    from open_deep_research.api.plugins.base import SourcePlugin, NormalizedResult
-    from open_deep_research.api.plugins.base import ContentResult
+    from open_deep_research.api.plugins.base import (
+        ContentResult,
+        NormalizedResult,
+        SourcePlugin,
+    )
 
     class FailingPlugin(SourcePlugin):
         name = "fail_plugin"
@@ -161,7 +164,7 @@ async def test_search_aggregator_plugin_failure():
 
     from open_deep_research.api.plugins.loader import PluginLoader
     loader = PluginLoader()
-    loader._plugins = {"fail_plugin": FailingPlugin()}
+    loader.register("fail_plugin", FailingPlugin())
 
     config = SearchProviderConfig(name="ok", priority=1, enabled=True)
 
