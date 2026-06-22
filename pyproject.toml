@@ -99,7 +99,7 @@ source = ["src/open_deep_research"]
 omit = ["src/open_deep_research/api/plugins/__pycache__/*", "src/open_deep_research/state_legacy.py"]
 
 [tool.coverage.report]
-fail_under = 60
+fail_under = 70
 skip_empty = true
 exclude_lines = [
     "pragma: no cover",

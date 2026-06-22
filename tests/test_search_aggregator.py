@@ -143,3 +143,63 @@ async def test_search_aggregator_with_plugins():
     urls = [r.url for r in results]
     assert "https://plugin.example.com/result" in urls
     assert "https://web.example.com" in urls
+
+
+@pytest.mark.asyncio
+async def test_search_aggregator_plugin_failure():
+    from open_deep_research.api.plugins.base import SourcePlugin, NormalizedResult
+    from open_deep_research.api.plugins.base import ContentResult
+
+    class FailingPlugin(SourcePlugin):
+        name = "fail_plugin"
+
+        async def search(self, query: str, max_results: int = 10) -> list[NormalizedResult]:
+            raise Exception("plugin search failed")
+
+        async def fetch(self, url: str):
+            return ContentResult(url=url, content="")
+
+    from open_deep_research.api.plugins.loader import PluginLoader
+    loader = PluginLoader()
+    loader._plugins = {"fail_plugin": FailingPlugin()}
+
+    config = SearchProviderConfig(name="ok", priority=1, enabled=True)
+
+    async def ok_search(q):
+        return [SearchResult(title="OK", url="https://ok.example.com", snippet="s", provider="ok")]
+
+    aggregator = SearchAggregator(providers=[config], search_functions={"ok": ok_search}, plugin_loader=loader)
+    results = await aggregator.search("test query")
+    assert len(results) == 1
+    assert results[0].url == "https://ok.example.com"
+
+
+class TestSearchAggregatorPattern:
+    @pytest.mark.asyncio
+    async def test_query_pattern_matches_provider(self):
+        call_log = []
+        async def search_fn(q):
+            call_log.append(q)
+            return [SearchResult(title="R", url="https://example.com", snippet="S", provider="academic")]
+
+        providers = [
+            SearchProviderConfig(name="academic", priority=1, query_pattern=r"(?:research|paper|study)"),
+        ]
+        aggregator = SearchAggregator(providers, {"academic": search_fn})
+        await aggregator.search("research about AI")
+        assert len(call_log) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_providers_matched_falls_back_to_all(self):
+        call_log = []
+        async def search_fn(q):
+            call_log.append(q)
+            return [SearchResult(title="R", url="https://example.com", snippet="S", provider="p")]
+
+        providers = [
+            SearchProviderConfig(name="p1", priority=1, query_pattern=r"(?:specific)"),
+            SearchProviderConfig(name="p2", priority=2, query_pattern=r"(?:exact)"),
+        ]
+        aggregator = SearchAggregator(providers, {"p1": search_fn, "p2": search_fn})
+        await aggregator.search("no match for either pattern")
+        assert len(call_log) == 2

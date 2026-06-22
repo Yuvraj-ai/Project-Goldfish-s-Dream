@@ -83,3 +83,14 @@ class TestEvalHarness:
         assert summary["num_queries"] == 2
         assert summary["avg_score"] > 0
         assert len(summary["results"]) == 2
+
+    def test_evaluate_batch_empty(self, harness):
+        summary = harness.evaluate_batch([])
+        assert summary["avg_score"] == 0.0
+        assert summary["min_score"] == 0.0
+        assert summary["max_score"] == 0.0
+        assert summary["results"] == []
+
+    def test_load_golden_set_missing_file(self):
+        with pytest.raises(FileNotFoundError):
+            EvalHarness("tests/golden_set/nonexistent.json")

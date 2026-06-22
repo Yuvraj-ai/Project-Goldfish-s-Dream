@@ -189,3 +189,198 @@ async def test_metrics_endpoint():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/metrics")
         assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_start_research_query_too_long():
+    from open_deep_research.api.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/research", json={
+            "query": "x" * 2001,
+        })
+        assert resp.status_code == 400
+        assert "too long" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_report_not_found():
+    from open_deep_research.api.deps import get_repo
+    from open_deep_research.api.main import app
+    repo = await get_repo()
+    run_id = await repo.create_run("test query", {})
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/research/{run_id}/report")
+        assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_export_unsupported_format():
+    from open_deep_research.api.deps import get_repo
+    from open_deep_research.api.main import app
+    repo = await get_repo()
+    run_id = await repo.create_run("test query", {})
+    await repo.save_report(run_id, {"content": "test report"})
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/research/{run_id}/export/pdf")
+        assert resp.status_code == 400
+        assert "Unsupported format" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_cancel_nonexistent_run():
+    from open_deep_research.api.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/research/nonexistent/cancel")
+        assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_stream_research():
+    from open_deep_research.api.deps import get_repo
+    from open_deep_research.api.main import app
+    from open_deep_research.api.models import ProgressEvent
+
+    repo = await get_repo()
+    run_id = await repo.create_run("stream test", {})
+    await repo.update_run_status(run_id, "running")
+    event = ProgressEvent(seq=0, event_type="phase", phase="research", message="Starting research")
+    await repo.append_progress(run_id, event)
+    await repo.update_run_status(run_id, "completed")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/research/{run_id}/stream")
+        assert resp.status_code == 200
+        assert "text/event-stream" in resp.headers["content-type"]
+        assert "Starting research" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_stream_research_not_found():
+    from open_deep_research.api.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/research/nonexistent/stream")
+        assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_report_success():
+    from open_deep_research.api.deps import get_repo
+    from open_deep_research.api.main import app
+
+    repo = await get_repo()
+    run_id = await repo.create_run("report test", {})
+    report = {"content": "# Test Report", "format": "markdown"}
+    await repo.save_report(run_id, report)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/research/{run_id}/report")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["content"] == "# Test Report"
+
+
+@pytest.mark.asyncio
+async def test_get_report_run_not_found():
+    from open_deep_research.api.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/research/nonexistent/report")
+        assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_export_report_success():
+    from open_deep_research.api.deps import get_repo
+    from open_deep_research.api.main import app
+
+    repo = await get_repo()
+    run_id = await repo.create_run("export test", {})
+    report = {"content": "# Test Report", "format": "markdown"}
+    await repo.save_report(run_id, report)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/research/{run_id}/export/json")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["run_id"] == run_id
+        assert data["format"] == "json"
+        assert "data" in data
+
+
+@pytest.mark.asyncio
+async def test_export_report_run_not_found():
+    from open_deep_research.api.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/research/nonexistent/export/json")
+        assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_export_report_no_report():
+    from open_deep_research.api.deps import get_repo
+    from open_deep_research.api.main import app
+
+    repo = await get_repo()
+    run_id = await repo.create_run("export no report", {})
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/research/{run_id}/export/json")
+        assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_plugins():
+    from open_deep_research.api.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/plugins")
+        assert resp.status_code == 200
+        assert resp.json() == {"plugins": []}
+
+
+@pytest.mark.asyncio
+async def test_save_feedback():
+    from open_deep_research.api.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/memory/feedback", json={
+            "topic": "test topic",
+            "rating": 5,
+            "comment": "great",
+        })
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_export_markdown_and_html():
+    from open_deep_research.api.deps import get_repo
+    from open_deep_research.api.main import app
+
+    repo = await get_repo()
+    run_id = await repo.create_run("multi format export", {})
+    report = {"content": "# Multi Format", "format": "markdown"}
+    await repo.save_report(run_id, report)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        for fmt in ("markdown", "html"):
+            resp = await client.get(f"/research/{run_id}/export/{fmt}")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["format"] == fmt

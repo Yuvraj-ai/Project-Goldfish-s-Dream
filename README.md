@@ -1,199 +1,71 @@
 # Advanced Deep Research
 
-Enhanced version of LangChain's `open_deep_research` framework — transforming it from a "text-in, text-out" prototype into a production-grade, evidence-first deep research platform.
+A production-grade deep research agent that autonomously investigates complex questions, verifies sources, and generates structured reports with citations, evidence cards, and multi-format export.
 
-## What's New (Phases 1-3)
+Built on LangGraph's `open_deep_research` — extended with evidence-first architecture, citation verification, adaptive research strategies, quality assurance review loops, and a REST API.
 
-### Phase 1: Foundation
-- **Evidence-first architecture** — Structured EvidenceCards with deterministic confidence scores
-- **Source verification** — Credibility scoring, corroboration, and recency analysis
-- **Budget controls** — Per-session token/cost limits with telemetry
-- **Research caching** — Mode-aware TTL caching for search results and evidence
-- **Input sanitization** — 56-pattern prompt injection defense
-- **Concurrency governor** — Per-provider rate limiting with circuit breaker
+---
 
-### Phase 2: Intelligence
-- **Adaptive research** — 9 research modes (comparison, market landscape, academic review, etc.)
-- **Research planning** — Structured subquestions with search strategies
-- **Multi-provider search** — Tavily, DuckDuckGo, academic DBs (arXiv, Semantic Scholar, PubMed, Crossref)
-- **Source diversity** — Domain histogram analysis and temporal relevance
-- **Document reading** — PDF parsing with section-by-section evidence extraction
-- **STORM perspectives** — Multi-perspective research with coverage matrix
+## Features
 
-### Phase 3: Generation
-- **Citation verification** — HTTP checks with concurrency control (Semaphore)
-- **Report profiles** — 8 built-in profiles (executive brief, deep research, academic review, investment memo, etc.)
-- **Section writers** — Parallel section generation with structured output
-- **Citation styles** — 6 styles (vanilla, APA, MLA, Chicago, Harvard, IEEE) + BibTeX
-- **Multi-format export** — Markdown, HTML, PDF, DOCX, JSON, BibTeX
-- **Reviewer agents** — Coverage, evidence, contradiction, and style reviewers with auto-rewrite loop
+- **Multi-provider search** — Tavily, DuckDuckGo, arXiv, Semantic Scholar, PubMed, Crossref
+- **Evidence extraction** — Structured evidence cards with deterministic confidence scoring (source credibility × corroboration × recency)
+- **Citation verification** — HTTP checks verify sources are alive; dead links trigger fallback search
+- **Adaptive research strategies** — 9 research modes (comparison, market landscape, academic review, etc.) with auto-classification
+- **Agentic document reading** — PDF parsing with section-by-section LLM interrogation (no vector DB)
+- **Multi-perspective research** — STORM-style parallel researchers across customer/investor/regulator/etc. lenses
+- **8 report profiles** — Executive brief, deep research report, academic literature review, investment memo, competitive landscape, technical design, policy memo, news brief
+- **6 citation styles** — APA, MLA, Chicago, Harvard, IEEE, vanilla + BibTeX export
+- **Parallel section writers** — Structured section generation with conflict-aware writing
+- **QA reviewer loop** — 4 parallel reviewers (coverage, evidence, contradiction, style) with auto-rewrite
+- **Multi-format export** — Markdown, HTML, PDF, DOCX, JSON
+- **REST API** — FastAPI server with SSE progress streaming, webhooks, cross-session memory, API key auth
+- **Observability** — Prometheus metrics endpoint, structured JSON logging, LangSmith tracing
+- **Security** — Prompt injection defense (56 patterns), rate limiting, circuit breakers, input validation
+- **Model routing** — 3-tier model selection (fast/balanced/quality) per task type for cost optimization
 
-## Architecture
-
-```
-START → clarify_with_user → parse_document → write_research_brief
-→ classify_research_request → generate_research_plan → optional_plan_review
-→ research_supervisor → verify_citations → generate_report_outline
-→ write_sections_parallel → compile_report → final_review
-→ [if score < threshold: rewrite_sections → compile_report (max 2x)]
-→ export_report → END
-```
+---
 
 ## Quickstart
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/Yuvraj-ai/Project-Goldfish-s-Dream.git
-cd Project-Goldfish-s-Dream/open_deep_research
-```
+# Prerequisites: Python 3.11+, uv
 
-2. Set up Python 3.11 virtual environment:
-```bash
+# 1. Clone and enter the directory
+git clone <repo-url>
+cd open_deep_research
+
+# 2. Create virtual environment and install
 uv venv --python 3.11 .venv
-source .venv/bin/activate
-```
-
-3. Install dependencies:
-```bash
 uv pip install -e ".[dev]"
-```
 
-4. Configure environment:
-```bash
+# 3. Configure API keys (at minimum: one LLM + one search provider)
 cp .env.example .env
-# Edit .env with your API keys
+
+# 4. Verify installation
+.venv/bin/python -c "from open_deep_research.deep_researcher import deep_researcher; print('OK')"
+
+# 5. Run tests
+.venv/bin/python -m pytest tests/ -x -q
 ```
 
-5. Run tests:
-```bash
-python -m pytest tests/ -x -q
-```
+---
 
-## Configuration
+## Usage
 
-All settings configurable via `Configuration` class in `src/open_deep_research/configuration.py`:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `enable_citation_verification` | True | HTTP-check citations before report |
-| `enable_section_writers` | True | Parallel section generation |
-| `enable_reviewer_loop` | True | Auto-rewrite with QA reviewers |
-| `citation_style` | vanilla | Citation format (APA, MLA, etc.) |
-| `export_formats` | [markdown] | Output formats |
-| `report_profile_override` | None | Force specific report profile |
-
-## Report Profiles
-
-| Profile | Description |
-|---------|-------------|
-| `executive_brief` | Concise summary with key findings |
-| `deep_research_report` | Comprehensive multi-section report |
-| `academic_literature_review` | Systematic literature review |
-| `investment_memo` | Investment analysis with risk assessment |
-| `competitive_landscape` | Competitive analysis with positioning |
-| `technical_design_research` | Technical architecture research |
-| `policy_memo` | Policy analysis with regulatory considerations |
-| `news_brief` | Timely news summary |
-
-## Testing
+### LangGraph Studio (Web UI)
 
 ```bash
-# Run all tests
-python -m pytest tests/ -x -q
-
-# Run specific test file
-python -m pytest tests/test_citation_verifier.py -v
+uvx langgraph dev
 ```
+Opens a visual graph editor at `http://localhost:2024` — type a query, step through nodes, inspect state.
 
-**Test coverage:** 349+ tests across 24 test files
-
-## Project Structure
-
-```
-open_deep_research/
-├── src/open_deep_research/
-│   ├── deep_researcher.py      # Main graph (17 nodes)
-│   ├── configuration.py        # All settings
-│   ├── state.py                # AgentState, EvidenceCard, Source, etc.
-│   ├── citation_verifier.py    # HTTP citation verification
-│   ├── report_profiles.py      # 8 built-in report profiles
-│   ├── citation.py             # 6 citation styles + BibTeX
-│   ├── exporters.py            # Multi-format export pipeline
-│   ├── reviewers.py            # 4 QA reviewer agents
-│   ├── evidence.py             # Evidence extraction engine
-│   ├── search_aggregator.py    # Multi-provider search
-│   ├── document_reader.py      # PDF parsing
-│   ├── perspectives.py         # STORM multi-perspective
-│   ├── utils.py                # Academic DB wrappers
-│   ├── sanitization.py         # Prompt injection defense
-│   ├── governor.py             # Rate limiting + circuit breaker
-│   ├── telemetry.py            # Budget tracking
-│   ├── research_cache.py       # Mode-aware caching
-│   ├── exceptions.py           # Exception taxonomy
-│   ├── api/
-│   │   ├── main.py             # FastAPI app with middleware
-│   │   ├── config.py           # API configuration
-│   │   ├── deps.py             # Dependencies, auth, rate limiting
-│   │   ├── exceptions.py       # API error hierarchy
-│   │   ├── models.py           # Pydantic models
-│   │   ├── repository.py       # Repository ABC
-│   │   ├── repository_sqlite.py # SQLite implementation
-│   │   ├── runner.py           # Background graph runner
-│   │   ├── streaming.py        # SSE progress streaming
-│   │   ├── memory.py           # Cross-session memory service
-│   │   ├── webhooks.py         # Webhook notification service
-│   │   ├── model_router.py     # Multi-model routing
-│   │   ├── metrics.py          # Prometheus metrics collector
-│   │   ├── plugins/            # Plugin system (base, loader, stubs)
-│   │   └── routes/             # Route handlers (research, memory, admin)
-│   └── scripts/                # Utility scripts
-└── tests/                      # 349+ tests
-```
-
-## API Server
-
-Open Deep Research includes a FastAPI server for programmatic access.
-
-### Quickstart
+### REST API
 
 ```bash
-# Install with API dependencies
-pip install open-deep-research[api]
+ENABLE_REST_API=true API_KEY=your-key .venv/bin/python -m open_deep_research.api.main
 
-# Start the server
-python -m open_deep_research.api.main
-
-# Or with configuration
-ENABLE_REST_API=true API_KEY=sk-your-key python -m open_deep_research.api.main
-```
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/research` | Start new research session |
-| GET | `/research/{id}` | Get run status |
-| GET | `/research/{id}/stream` | SSE progress stream |
-| GET | `/research/{id}/report` | Get final report |
-| GET | `/research/{id}/export/{fmt}` | Export report (markdown, html, pdf, docx) |
-| POST | `/research/{id}/cancel` | Cancel running research |
-| GET | `/memory` | List saved research topics |
-| GET | `/memory/{topic_hash}` | Load saved research |
-| POST | `/memory/feedback` | Save user preference |
-| POST | `/webhooks` | Register webhook |
-| GET | `/webhooks` | List webhooks |
-| DELETE | `/webhooks/{id}` | Remove webhook |
-| GET | `/plugins` | List registered plugins |
-| GET | `/health` | Health check |
-
-### Authentication
-
-Set `API_KEY` env var or `api_keys` in config. Pass via `X-API-Key` header.
-
-### Example
-
-```bash
-# Start a research session
+# Start research
 curl -X POST http://localhost:8000/research \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-key" \
@@ -202,18 +74,181 @@ curl -X POST http://localhost:8000/research \
 # Stream progress (SSE)
 curl -N http://localhost:8000/research/{run_id}/stream
 
-# Get the final report
+# Get report
 curl http://localhost:8000/research/{run_id}/report
+
+# Export
+curl http://localhost:8000/research/{run_id}/export/markdown
+
+# Metrics
+curl localhost:8000/metrics
 ```
 
-## Key Design Decisions
+### Python SDK
 
-- **Evidence-first:** Structured EvidenceCards with deterministic confidence scores (not LLM self-reported)
-- **No vector-RAG:** Agentic document reading (section-by-section LLM interrogation)
-- **Conflict presentation:** Never average contradictory claims — present disagreements explicitly
-- **Feature flags:** All new components behind flags in Configuration (default True)
-- **Backward compatible:** Legacy single-pass path preserved when flags disabled
+```python
+import asyncio
+from open_deep_research.deep_researcher import deep_researcher
+
+async def main():
+    result = await deep_researcher.ainvoke(
+        {"messages": [{"role": "user", "content": "Compare React vs Vue for enterprise apps"}]},
+        config={
+            "configurable": {
+                "research_model": "google_genai:gemini-2.5-flash",
+                "search_api": "tavily",
+            }
+        }
+    )
+    print(result.get("final_report", ""))
+
+asyncio.run(main())
+```
+
+### Full Verification
+
+```bash
+# Lint + dependency audit + tests with coverage
+bash scripts/verify.sh
+```
+
+---
+
+## Architecture
+
+The research pipeline is a LangGraph with 19 nodes:
+
+```
+clarify → parse_document → brief → classify → plan → review
+→ supervisor (parallel researchers)
+→ extract_evidence → compress → verify_citations
+→ outline → parallel_section_writers → compile
+→ final_review (4 parallel reviewers)
+→ [rewrite loop → compile → max 2x]
+→ export
+```
+
+### Research Graph Nodes
+
+| Phase | Nodes | Description |
+|-------|-------|-------------|
+| Planning | clarify, parse, brief, classify, plan, review | Understand query, classify mode, generate subquestions |
+| Research | supervisor, researchers | Parallel multi-provider search across NC researchers |
+| Evidence | extract_evidence, compress | Build evidence cards, dedup, detect conflicts |
+| Verification | verify_citations | HTTP check every source URL |
+| Generation | outline, section_writers, compile | Profile-aware section writing with citation formatting |
+| Review | final_review, rewrite_sections | 4 parallel reviewers (coverage/evidence/contradiction/style) |
+| Export | export_report | Markdown, HTML, PDF, DOCX, JSON |
+
+---
+
+## Configuration
+
+Key settings in `src/open_deep_research/configuration.py`. Configurable via `.env`, environment variables, or LangGraph Studio.
+
+### Model Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `research_model` | `openai:gpt-4.1` | Model for research |
+| `compression_model` | `openai:gpt-4.1` | Model for compression |
+| `final_report_model` | `openai:gpt-4.1` | Model for report writing |
+| `search_api` | `tavily` | Search provider |
+
+### Feature Flags
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enable_citation_verification` | `true` | HTTP-check citations |
+| `enable_section_writers` | `true` | Parallel section generation |
+| `enable_reviewer_loop` | `true` | QA review + auto-rewrite |
+| `enable_evidence_first` | `true` | Evidence-card architecture |
+| `enable_model_routing` | `false` | Multi-tier model routing |
+
+### Report Profiles
+
+| Profile | Best for |
+|---------|----------|
+| `executive_brief` | Concise summary with key findings |
+| `deep_research_report` | Comprehensive multi-section report |
+| `academic_literature_review` | Systematic literature review |
+| `investment_memo` | Investment analysis with risk assessment |
+| `competitive_landscape` | Competitive analysis |
+| `technical_design_research` | Technical architecture research |
+| `policy_memo` | Policy analysis |
+| `news_brief` | Timely news summary |
+
+---
+
+## API Endpoints
+
+| Method | Path | Auth Scope | Description |
+|--------|------|------------|-------------|
+| `POST` | `/research` | `research:write` | Start research |
+| `GET` | `/research/{id}` | `research:read` | Get run status |
+| `GET` | `/research/{id}/stream` | `research:read` | SSE progress stream |
+| `GET` | `/research/{id}/report` | `research:read` | Get final report |
+| `GET` | `/research/{id}/export/{fmt}` | `research:read` | Export report |
+| `POST` | `/research/{id}/cancel` | `research:write` | Cancel run |
+| `GET` | `/memory` | `research:read` | List saved topics |
+| `GET` | `/memory/{hash}` | `research:read` | Load saved research |
+| `POST` | `/memory/feedback` | `research:write` | Save preference |
+| `POST` | `/webhooks` | `admin` | Register webhook |
+| `GET` | `/webhooks` | `admin` | List webhooks |
+| `DELETE` | `/webhooks/{id}` | `admin` | Remove webhook |
+| `GET` | `/plugins` | `admin` | List plugins |
+| `GET` | `/health` | none | Health check |
+| `GET` | `/metrics` | none | Prometheus metrics |
+
+---
+
+## Project Structure
+
+```
+src/open_deep_research/
+├── deep_researcher.py       # 19-node LangGraph
+├── configuration.py         # All settings + feature flags
+├── state.py                 # State + Pydantic models
+├── evidence.py              # Evidence extraction engine
+├── citation_verifier.py     # HTTP citation verification
+├── report_profiles.py       # 8 report profiles
+├── citation.py              # 6 citation styles + BibTeX
+├── exporters.py             # Multi-format export
+├── reviewers.py             # 4 QA reviewers
+├── search_aggregator.py     # Multi-provider search
+├── document_reader.py       # PDF parsing
+├── perspectives.py          # STORM multi-perspective
+├── sanitization.py          # Injection defense
+├── governor.py              # Rate limiting
+├── telemetry.py             # Cost tracking
+├── research_cache.py        # Mode-aware caching
+├── exceptions.py            # Exception hierarchy
+└── api/                     # REST API server
+    ├── main.py              # FastAPI app
+    ├── repository.py        # Persistence ABC
+    ├── repository_sqlite.py # SQLite backend
+    ├── runner.py            # Background execution
+    ├── streaming.py         # SSE streaming
+    ├── memory.py            # Cross-session memory
+    ├── webhooks.py          # Webhook notifications
+    ├── model_router.py      # Multi-model routing
+    ├── metrics.py           # Prometheus metrics
+    ├── plugins/             # Source plugin system
+    └── routes/              # Route handlers
+```
+
+---
+
+## Design Principles
+
+- **Evidence-first:** Every claim backed by structured evidence with deterministic confidence scores — not LLM self-reports
+- **No vector-RAG:** Agentic document reading via section-by-section LLM interrogation; no chunking or embeddings
+- **Conflict-aware:** Contradictory claims are presented explicitly, never averaged into false consensus
+- **Feature-flagged:** All new components behind configuration flags with preserved legacy fallback paths
+- **Observable by default:** LangSmith tracing, Prometheus metrics, structured logging on every API request
+
+---
 
 ## License
 
-MIT
+MIT — see `LICENSE`. Original `open_deep_research` Copyright (c) 2025 LangChain.

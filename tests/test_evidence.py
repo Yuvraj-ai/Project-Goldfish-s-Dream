@@ -166,6 +166,16 @@ class TestDeduplicateClaims:
         assert len(unique) == 0
         assert len(dupes) == 0
 
+    def test_keeps_higher_confidence_when_second_is_lower(self):
+        cards = [
+            EvidenceCard(id="1", claim="Python is popular for AI", confidence=0.9),
+            EvidenceCard(id="2", claim="Python is popular for AI development", confidence=0.7),
+        ]
+        unique, dupes = deduplicate_claims(cards)
+        assert len(unique) == 1
+        assert len(dupes) == 1
+        assert unique[0].id == "1"
+
 
 class TestDetectConflicts:
     """Test conflict detection."""
@@ -203,3 +213,13 @@ class TestCompressEvidence:
     def test_empty_input(self):
         compressed = compress_evidence([])
         assert len(compressed) == 0
+
+    def test_merges_identical_claims(self):
+        cards = [
+            EvidenceCard(id="1", claim="Python is popular for AI", confidence=0.8,
+                        supporting_source_ids=["url1"], exact_excerpts=["ex1"]),
+            EvidenceCard(id="2", claim="Python is popular for AI", confidence=0.9,
+                        supporting_source_ids=["url2"], exact_excerpts=["ex2"]),
+        ]
+        compressed = compress_evidence(cards)
+        assert len(compressed) == 1
