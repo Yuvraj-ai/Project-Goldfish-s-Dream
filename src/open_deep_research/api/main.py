@@ -48,6 +48,12 @@ async def limit_body_size(request: Request, call_next):
         return JSONResponse(
             status_code=413, content={"error": "Request body too large"}
         )
+    if request.method in ("POST", "PUT", "PATCH"):
+        body = await request.body()
+        if len(body) > 1_000_000:
+            return JSONResponse(
+                status_code=413, content={"error": "Request body too large"}
+            )
     return await call_next(request)
 
 

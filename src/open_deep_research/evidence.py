@@ -81,8 +81,14 @@ def compute_recency_score(
         return max(0.0, 1.0 - (decay_days / (window * 2)))
 
 
-@lru_cache(maxsize=4096)
 def _jaccard_similarity(claim_a: str, claim_b: str) -> float:
+    # Sort to ensure cache-friendly pair ordering
+    a, b = sorted([claim_a, claim_b])
+    return _jaccard_similarity_cached(a, b)
+
+
+@lru_cache(maxsize=4096)
+def _jaccard_similarity_cached(claim_a: str, claim_b: str) -> float:
     words_a = set(re.findall(r'\w+', claim_a.lower()))
     words_b = set(re.findall(r'\w+', claim_b.lower()))
     if not words_a or not words_b:

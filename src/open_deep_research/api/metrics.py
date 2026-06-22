@@ -34,12 +34,20 @@ class MetricsCollector:
             for key, values in self._histograms.items():
                 name = key[0]
                 label_str = "{" + ",".join(key[1:]) + "}" if len(key) > 1 else ""
-                lines.append(f"# HELP {name}_total Latency observations")
-                lines.append(f"# TYPE {name}_total counter")
-                lines.append(f"{name}_total{label_str} {len(values)}")
-                lines.append(f"# HELP {name}_sum Total latency seconds")
-                lines.append(f"# TYPE {name}_sum counter")
-                lines.append(f"{name}_sum{label_str} {sum(values)}")
+                count = len(values)
+                total = sum(values)
+                lines.append(f"# HELP {name} Request latency seconds")
+                lines.append(f"# TYPE {name} histogram")
+                # Cumulative histogram buckets
+                buckets = [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, float("inf")]
+                for bucket in buckets:
+                    le = float("inf") if bucket == float("inf") else bucket
+                    le_label = "+Inf" if bucket == float("inf") else f"{le:.2f}"
+                    bucket_count = sum(1 for v in values if v <= le)
+                    bucket_labels = label_str.replace("}", f",le={le_label}}}") if label_str else f"{{le=\"{le_label}\"}}"
+                    lines.append(f"{name}_bucket{bucket_labels} {bucket_count}")
+                lines.append(f"{name}_count{label_str} {count}")
+                lines.append(f"{name}_sum{label_str} {total}")
         return "\n".join(lines) + "\n"
 
 
