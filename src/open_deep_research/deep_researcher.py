@@ -18,7 +18,7 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from open_deep_research.api.model_router import ModelRouter, ModelTier, TaskType
 from open_deep_research.api.models import ProgressEvent
@@ -179,7 +179,7 @@ async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Comman
     # Configure model with structured output and retry logic
     clarification_model = (
         configurable_model
-        .with_structured_output(ClarifyWithUser)
+        .with_structured_output(ClarifyWithUser, method="function_calling")
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
         .with_config(model_config)
     )
@@ -239,7 +239,7 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> Com
     # Configure model for structured research question generation
     research_model = (
         configurable_model
-        .with_structured_output(ResearchQuestion)
+        .with_structured_output(ResearchQuestion, method="function_calling")
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
         .with_config(research_model_config)
     )
@@ -305,7 +305,7 @@ async def classify_research_request(state: AgentState, config: RunnableConfig) -
 
     classifier_model = (
         configurable_model
-        .with_structured_output(ClassificationResult)
+        .with_structured_output(ClassificationResult, method="function_calling")
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
         .with_config(classifier_model_config)
     )
@@ -374,6 +374,30 @@ async def generate_research_plan(state: AgentState, config: RunnableConfig) -> C
         stop_conditions: list[str]
         risks: list[str]
 
+        @field_validator("subquestions", "expected_source_types", "proposed_sections", "stop_conditions", "risks", mode="before")
+        @classmethod
+        def coerce_string_to_list(cls, v):
+            if isinstance(v, str):
+                return [v]
+            return v
+
+        @field_validator("search_strategy", mode="before")
+        @classmethod
+        def flatten_search_strategy(cls, v):
+            if not isinstance(v, dict):
+                return v
+            # Check if nested per-subquestion format (values are dicts)
+            if v and all(isinstance(val, dict) for val in v.values()):
+                flat: dict[str, list[str]] = {}
+                for subq_val in v.values():
+                    for provider, sources in subq_val.items():
+                        if isinstance(sources, list):
+                            flat.setdefault(provider, []).extend(sources)
+                        elif isinstance(sources, str):
+                            flat.setdefault(provider, []).append(sources)
+                return flat
+            return v
+
     planner_model_config = {
         "model": configurable.research_model,
         "max_tokens": 2048,
@@ -390,7 +414,7 @@ async def generate_research_plan(state: AgentState, config: RunnableConfig) -> C
 
     planner_model = (
         configurable_model
-        .with_structured_output(PlanResult)
+        .with_structured_output(PlanResult, method="function_calling")
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
         .with_config(planner_model_config)
     )
@@ -614,6 +638,13 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> Co
             
             if raw_notes_concat:
                 update_payload["raw_notes"] = [raw_notes_concat]
+            
+            # Collect sources from all research results
+            all_sources = []
+            for observation in tool_results:
+                all_sources.extend(observation.get("sources", []))
+            if all_sources:
+                update_payload["sources"] = all_sources
                 
         except Exception as e:
             # Handle research execution errors with specific types
@@ -828,28 +859,42 @@ async def extract_structured_evidence(state: ResearcherState, config: RunnableCo
     configurable = Configuration.from_runnable_config(config)
 
     if not configurable.enable_evidence_first:
-        # Legacy path: skip to flat compression
         return {}
 
-    raw_notes = state.get("raw_notes", [])
-    all_text = "\n".join(raw_notes) if raw_notes else ""
+    # Parse search tool results from tool messages to extract URLs
+    # Search tools format results as: "--- SOURCE N: <title> ---\nURL: <url>\n\nSUMMARY:\n<content>"
+    raw_results = []
+    seen_urls = set()
+    researcher_messages = state.get("researcher_messages", [])
+    for msg in researcher_messages:
+        if hasattr(msg, "type") and msg.type == "tool":
+            content = str(msg.content)
+            # Extract structured results from formatted search output
+            import re
+            for match in re.finditer(
+                r"--- SOURCE \d+: (?P<title>.+?) ---\s*URL: (?P<url>https?://\S+)\s*SUMMARY:\s*(?P<content>.+?)(?:\n---|\Z)",
+                content, re.DOTALL
+            ):
+                url = match.group("url").rstrip("/")
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    raw_results.append({
+                        "url": url,
+                        "title": match.group("title").strip(),
+                        "content": match.group("content").strip()[:2000],
+                    })
 
-    if not all_text:
+    if not raw_results:
         return {}
 
     cards, sources = extract_evidence(
-        raw_results=[{"content": all_text, "url": "", "title": "Research Output"}],
+        raw_results=raw_results,
         subquestion_id="main",
         researcher_id="supervisor",
     )
 
-    # Deduplicate
     unique_cards, _ = deduplicate_claims(cards)
-
-    # Detect conflicts (stored for reference)
     detect_conflicts(unique_cards)
-
-    # Compress
     compressed = compress_evidence(unique_cards)
 
     return {
@@ -979,11 +1024,13 @@ async def verify_citations(state: AgentState, config: RunnableConfig) -> dict:
             url = source.get("url", "")
             result = verification_results.get(url, {"status": "unverified"})
 
+            raw_status = result.get("status", "unverified")
+            mapped_status = "verified" if raw_status == "alive" else raw_status
             check = CitationCheck(
                 claim="",
                 url=url,
-                status=result["status"],
-                problem="" if result["status"] == "alive" else f"URL {result['status']}",
+                status=mapped_status,
+                problem="" if raw_status == "alive" else f"URL {raw_status}",
             )
             citation_checks.append(check.model_dump())
 
@@ -1151,7 +1198,7 @@ async def write_section(
         "Write a well-structured section with inline citations."
     )
     writer_model = (
-        configurable_model.with_structured_output(SectionOutput)
+        configurable_model.with_structured_output(SectionOutput, method="function_calling")
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
         .with_config(writer_model_config)
     )

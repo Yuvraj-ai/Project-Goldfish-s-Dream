@@ -92,7 +92,7 @@ async def tavily_search(
         max_tokens=configurable.summarization_model_max_tokens,
         api_key=model_api_key,
         tags=["langsmith:nostream"]
-    ).with_structured_output(Summary).with_retry(
+    ).with_structured_output(Summary, method="function_calling").with_retry(
         stop_after_attempt=configurable.max_structured_output_retries
     )
     

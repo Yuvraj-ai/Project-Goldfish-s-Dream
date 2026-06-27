@@ -116,16 +116,117 @@ bash scripts/verify.sh
 
 ## Architecture
 
-The research pipeline is a LangGraph with 19 nodes:
+### System Overview
 
+The platform is layered: a FastAPI platform layer drives a LangGraph orchestration core, which in
+turn calls the intelligence (evidence) and report-generation layers. Cross-cutting services —
+telemetry, the rate-limit governor, caching, and input sanitization — wrap the orchestration core
+rather than sitting in the linear flow.
+
+```mermaid
+flowchart TB
+    subgraph CLIENT["Clients"]
+        UI["CLI / LangGraph Studio"]
+        HTTP["HTTP clients / SSE consumers"]
+    end
+
+    subgraph PLATFORM["Platform / API Layer (FastAPI, ASGI-mountable)"]
+        API["FastAPI app + middleware<br/>(body-size · request-id · metrics · auth)"]
+        RUNNER["ResearchRunner<br/>(async tasks + semaphore)"]
+        REPO["ResearchRepository → SQLite"]
+        EXTRAS["streaming · memory · webhooks<br/>model router · plugins · metrics"]
+    end
+
+    subgraph ORCH["Orchestration — LangGraph (deep_researcher.py)"]
+        GRAPH["Main graph"]
+        SUPER["Supervisor subgraph"]
+        RSCH["Researcher subgraph"]
+    end
+
+    subgraph INTEL["Intelligence / Evidence Layer"]
+        EVID["evidence.py"]
+        CLASS["mode classifier + planner"]
+        DOC["document_reader.py"]
+        STORM["perspectives.py (STORM)"]
+        AGG["search_aggregator.py"]
+    end
+
+    subgraph GEN["Report Generation Layer"]
+        VERIFY["citation_verifier.py"]
+        PROFILES["report_profiles.py"]
+        CITE["citation.py"]
+        REVIEW["reviewers.py"]
+        EXPORT["exporters.py"]
+    end
+
+    subgraph CROSS["Cross-cutting Services"]
+        TEL["telemetry (budget + cost)"]
+        GOV["governor (rate limit + breaker)"]
+        CACHE["research_cache (mode-aware TTL)"]
+        SANI["sanitization (injection defense)"]
+    end
+
+    subgraph EXT["External Services"]
+        SEARCH["Tavily / web search"]
+        ACAD["arXiv · Semantic Scholar · PubMed · Crossref"]
+        LLM["LLM providers"]
+        MCP["MCP tool servers"]
+    end
+
+    UI --> GRAPH
+    HTTP --> API --> RUNNER --> GRAPH
+    RUNNER --> REPO
+    API --> EXTRAS
+
+    GRAPH --> SUPER --> RSCH
+    GRAPH --> CLASS
+    GRAPH --> DOC
+    RSCH --> EVID
+    RSCH --> AGG
+    SUPER --> STORM
+    GRAPH --> VERIFY
+    GRAPH --> PROFILES
+    GRAPH --> REVIEW
+    GRAPH --> EXPORT --> CITE
+
+    EVID -.uses.-> SANI
+    AGG -.through.-> GOV
+    AGG -.checks.-> CACHE
+    GRAPH -.wrapped by.-> TEL
+
+    AGG --> SEARCH
+    AGG --> ACAD
+    RSCH --> MCP
+    GRAPH --> LLM
 ```
-clarify → parse_document → brief → classify → plan → review
-→ supervisor (parallel researchers)
-→ extract_evidence → compress → verify_citations
-→ outline → parallel_section_writers → compile
-→ final_review (4 parallel reviewers)
-→ [rewrite loop → compile → max 2x]
-→ export
+
+### Research Pipeline
+
+The research pipeline is a LangGraph with 19 nodes. Diamonds are conditional edges; the
+`research_supervisor` node is a subgraph (see below).
+
+```mermaid
+flowchart TD
+    START([START]) --> CLAR["clarify_with_user"]
+    CLAR -->|need_clarification| ENDQ([END · ask user])
+    CLAR -->|ok| PARSE["parse_document<br/>(PDF → evidence_cards)"]
+    PARSE --> BRIEF["write_research_brief"]
+    BRIEF --> CLASSIFY["classify_research_request<br/>(→ research_mode + profile)"]
+    CLASSIFY --> PLAN["generate_research_plan<br/>(objective, subquestions, strategy)"]
+    PLAN --> REVIEWP{"optional_plan_review<br/>mode?"}
+    REVIEWP -->|reject & revs < max| PLAN
+    REVIEWP -->|none / auto / approved| SUPER[["research_supervisor<br/>(subgraph)"]]
+
+    SUPER --> VERIFY["verify_citations<br/>(GET→HEAD URL checks)"]
+    VERIFY --> OUTLINE["generate_report_outline<br/>(profile + evidence allocation)"]
+    OUTLINE --> SECT["write_sections_parallel"]
+    SECT --> COMPILE["compile_report<br/>(+ TOC + bibliography)"]
+    COMPILE --> FREVIEW["final_review<br/>(4 reviewers in parallel)"]
+    FREVIEW --> DECIDE{"avg_score < threshold<br/>AND iter < max(2)?"}
+    DECIDE -->|yes| REWRITE["rewrite_sections"]
+    REWRITE --> COMPILE
+    DECIDE -->|no| EXPORT["export_report<br/>(md/html/pdf/docx/json/bib)"]
+    EXPORT --> DONE([END])
 ```
 
 ### Research Graph Nodes
@@ -139,6 +240,128 @@ clarify → parse_document → brief → classify → plan → review
 | Generation | outline, section_writers, compile | Profile-aware section writing with citation formatting |
 | Review | final_review, rewrite_sections | 4 parallel reviewers (coverage/evidence/contradiction/style) |
 | Export | export_report | Markdown, HTML, PDF, DOCX, JSON |
+
+### Supervisor & Researcher Subgraphs
+
+The `research_supervisor` node delegates `ConductResearch` calls to parallel researcher subgraphs
+(up to `max_concurrent_research_units`, default 5). Each researcher runs a ReAct tool loop, then
+compresses and extracts structured evidence.
+
+```mermaid
+flowchart TD
+    subgraph SUP["Supervisor subgraph (max_researcher_iterations = 6)"]
+        S0([START]) --> S1["supervisor (LLM + tools)"]
+        S1 --> S2["supervisor_tools"]
+        S2 -->|"ConductResearch (×N parallel)"| RGRAPH[["researcher subgraph"]]
+        S2 -->|think_tool| S1
+        S2 -->|"ResearchComplete / max iters"| SEND([END])
+        S2 -->|else| S1
+    end
+
+    subgraph RES["Researcher subgraph (max_react_tool_calls = 10)"]
+        R0([START]) --> R1["researcher (LLM + tools)"]
+        R1 --> R2["researcher_tools<br/>(search / MCP / think)"]
+        R2 -->|more tool calls| R1
+        R2 -->|"done / max calls"| R3["compress_research<br/>(token-limit retry)"]
+        R3 --> R4["extract_structured_evidence<br/>(if enable_evidence_first)"]
+        R4 --> REND([END])
+    end
+
+    RGRAPH -.spawns.-> R0
+```
+
+### Evidence & Confidence Scoring
+
+Raw search results become scored, deduplicated, conflict-flagged evidence cards. The confidence
+score is computed **programmatically** — never self-reported by the LLM.
+
+```mermaid
+flowchart LR
+    RAW["raw search results"] --> SAN["ContentSanitizer.sanitize<br/>(injection patterns + isolation)"]
+    SAN --> EXT["extract_evidence()"]
+
+    subgraph SCORE["confidence = 0.40·cred + 0.35·corrob + 0.25·recency"]
+        CRED["source_credibility<br/>0.5 base · +0.2 academic<br/>+0.15 authoritative · −0.2 untrusted"]
+        CORR["corroboration_strength<br/>min(1, supporting/3) via Jaccard ≥ 0.7"]
+        REC["recency_score<br/>mode-aware window<br/>news 7d · tech 90d · academic 3y · def 180d"]
+    end
+
+    EXT --> CRED & CORR & REC
+    CRED & CORR & REC --> CARD["EvidenceCard"]
+    CARD --> DEDUP["deduplicate_claims()<br/>(keep highest confidence)"]
+    DEDUP --> CONF["detect_conflicts()<br/>(negation regex + token overlap)"]
+    CONF --> COMP["compress_evidence()<br/>(merge groups, top-5 excerpts)"]
+    COMP --> OUT["evidence_cards · sources · conflicts"]
+```
+
+### State Model
+
+The top-level LangGraph state is a `TypedDict`; Pydantic models are stored as dicts and
+reconstructed when needed. Custom reducers (`merge_sources`, `append_evidence`, `override_reducer`)
+govern how concurrent updates merge.
+
+```mermaid
+classDiagram
+    class AgentState {
+        <<TypedDict / MessagesState>>
+        messages : list [operator.add]
+        supervisor_messages : list [override_reducer]
+        research_brief : str
+        final_report : str
+        sources : list [merge_sources]
+        evidence_cards : list [append_evidence]
+        conflicts : list
+        citation_checks : list [operator.add]
+        review_results : list
+        research_mode : str
+        research_plan : dict
+        report_outline : dict
+        written_sections : list
+        exported_files : dict
+        telemetry : dict
+    }
+    class EvidenceCard {
+        id · claim · confidence
+        supporting_source_ids
+        conflicting_source_ids
+        exact_excerpts
+        subquestion_id · researcher_id
+        deduplicated_from
+    }
+    class Source {
+        url · title · publisher · date
+        credibility_score
+        source_type · provider · raw_excerpts
+    }
+    class ConflictFlag {
+        card_a_id · card_b_id
+        conflict_description · severity
+    }
+    class CitationCheck {
+        claim · url · supports_claim
+        problem · fix · status
+    }
+    class ReviewResult {
+        coverage_score · evidence_score · style_score
+        contradiction_flags · iteration_count · feedback
+    }
+    class ResearchPlanExtended {
+        objective · subquestions · search_strategy
+        expected_source_types · proposed_sections
+        stop_conditions · risks
+    }
+
+    AgentState "1" o-- "*" EvidenceCard : evidence_cards
+    AgentState "1" o-- "*" Source : sources
+    AgentState "1" o-- "*" ConflictFlag : conflicts
+    AgentState "1" o-- "*" CitationCheck : citation_checks
+    AgentState "1" o-- "1" ResearchPlanExtended : research_plan
+    AgentState "1" o-- "*" ReviewResult : review_results
+    EvidenceCard ..> Source : supporting_source_ids
+```
+
+> A standalone reference with all of these diagrams collected in one place lives in
+> [`docs/architecture-diagrams.md`](docs/architecture-diagrams.md).
 
 ---
 
@@ -164,6 +387,34 @@ Key settings in `src/open_deep_research/configuration.py`. Configurable via `.en
 | `enable_reviewer_loop` | `true` | QA review + auto-rewrite |
 | `enable_evidence_first` | `true` | Evidence-card architecture |
 | `enable_model_routing` | `false` | Multi-tier model routing |
+
+Each flag gates a specific node or component, with a legacy fallback preserved when it is off.
+Numeric guardrails bound cost and latency regardless of flags.
+
+```mermaid
+flowchart LR
+    subgraph FLAGS["Feature flags → what they gate"]
+        F1["enable_evidence_first"] --> N1["extract_structured_evidence node"]
+        F2["enable_mode_classification"] --> N2["classify_research_request node"]
+        F3["enable_document_reading"] --> N3["parse_document node"]
+        F4["enable_citation_verification"] --> N4["verify_citations node"]
+        F5["enable_section_writers"] --> N5["outline / sections / compile nodes"]
+        F6["enable_reviewer_loop"] --> N6["final_review + rewrite loop"]
+        F7["enable_search_aggregation"] --> N7["multi-provider SearchAggregator"]
+        F8["enable_academic_search"] --> N8["arXiv / Semantic Scholar / PubMed / Crossref"]
+        F9["enable_storm_research"] --> N9["PerspectiveGenerator (STORM)"]
+        F10["enable_model_routing"] --> N10["ModelRouter tier selection"]
+    end
+
+    subgraph GUARDS["Numeric guardrails"]
+        G1["max_researcher_iterations = 6"]
+        G2["max_react_tool_calls = 10"]
+        G3["max_concurrent_research_units = 5"]
+        G4["max_review_iterations = 2 (hard cap)"]
+        G5["review_score_threshold = 0.7"]
+        G6["BudgetConfig: 1M tokens / $10 cap"]
+    end
+```
 
 ### Report Profiles
 
@@ -200,6 +451,47 @@ Key settings in `src/open_deep_research/configuration.py`. Configurable via `.en
 | `GET` | `/health` | none | Health check |
 | `GET` | `/metrics` | none | Prometheus metrics |
 
+### Request Lifecycle
+
+A research run executes in the background. The client receives a `run_id` immediately, then follows
+progress over SSE while the graph runs and a webhook fires on completion.
+
+```mermaid
+sequenceDiagram
+    actor Client
+    participant API as FastAPI (/research)
+    participant Runner as ResearchRunner
+    participant Graph as deep_researcher
+    participant Repo as SQLite Repository
+    participant Hook as WebhookNotifier
+
+    Client->>API: POST /research {query, config}
+    API->>API: verify_api_key + body-size + length checks
+    API->>Runner: start(repo, query, config)
+    Runner->>Repo: create_run() → run_id
+    API-->>Client: 200 {run_id, status:"pending"}
+
+    Note over Runner: acquire semaphore (max_concurrent_runs)
+    Runner->>Repo: update_run_status("running")
+    Runner->>Graph: astream(messages, config{repo, run_id})
+
+    par SSE streaming
+        Client->>API: GET /research/{id}/stream
+        API->>Repo: watch_run() polls progress_after(seq) every 0.5s
+        Repo-->>Client: data: ProgressEvent (SSE)
+    and Graph execution
+        loop each node
+            Graph->>Repo: append_progress(phase_complete)
+        end
+    end
+
+    Graph-->>Runner: final_report
+    Runner->>Repo: save_report() + update_run_status("completed")
+    Runner->>Hook: notify("run_completed") → HMAC-sign + POST (retry w/ backoff)
+    Client->>API: GET /research/{id}/report
+    Repo-->>Client: {markdown, ...}
+```
+
 ---
 
 ## Project Structure
@@ -235,6 +527,60 @@ src/open_deep_research/
     ├── metrics.py           # Prometheus metrics
     ├── plugins/             # Source plugin system
     └── routes/              # Route handlers
+```
+
+### Module Dependencies
+
+How the modules above depend on one another. `deep_researcher.py` is the hub; the `api/` package
+wraps it for background/HTTP execution.
+
+```mermaid
+flowchart LR
+    subgraph core["Core"]
+        DR["deep_researcher.py"]
+        ST["state.py"]
+        CFG["configuration.py"]
+        EXC["exceptions.py"]
+    end
+    subgraph intel["Intelligence"]
+        EV["evidence.py"]
+        DOCR["document_reader.py"]
+        PER["perspectives.py"]
+        SA["search_aggregator.py"]
+    end
+    subgraph gen["Generation"]
+        CV["citation_verifier.py"]
+        RP["report_profiles.py"]
+        CT["citation.py"]
+        RV["reviewers.py"]
+        EXP["exporters.py"]
+    end
+    subgraph crosscut["Cross-cutting"]
+        TE["telemetry.py"]
+        GV["governor.py"]
+        CA["research_cache.py"]
+        SN["sanitization.py"]
+    end
+    subgraph api["api/"]
+        RUN["runner.py"]
+        RPO["repository*.py"]
+        STRm["streaming.py"]
+        MR["model_router.py"]
+        PL["plugins/*"]
+    end
+
+    DR --> ST & CFG & EXC
+    DR --> EV & DOCR & PER
+    DR --> CV & RP & RV & EXP
+    EV --> SN
+    EV --> ST
+    SA --> GV & CA & PL
+    EXP --> CT
+    DR -.telemetry.-> TE
+    RUN --> DR
+    RUN --> RPO
+    STRm --> RPO
+    DR --> MR
 ```
 
 ---
