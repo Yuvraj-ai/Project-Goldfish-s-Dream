@@ -1,0 +1,313 @@
+{
+  "accuracy": 0.8627450980392157,
+  "correct": 44,
+  "total": 51,
+  "results": [
+    {
+      "query": "Compare Python vs JavaScript for web development",
+      "expected": "comparison",
+      "got": "comparison",
+      "ok": true
+    },
+    {
+      "query": "Compare AWS Lambda vs Google Cloud Functions",
+      "expected": "comparison",
+      "got": "comparison",
+      "ok": true
+    },
+    {
+      "query": "Compare React vs Vue.js for frontend development",
+      "expected": "comparison",
+      "got": "comparison",
+      "ok": true
+    },
+    {
+      "query": "Compare PostgreSQL and MongoDB for data analytics",
+      "expected": "comparison",
+      "got": "comparison",
+      "ok": true
+    },
+    {
+      "query": "Compare Kubernetes and Docker Swarm for container orchestrat",
+      "expected": "comparison",
+      "got": "comparison",
+      "ok": true
+    },
+    {
+      "query": "Compare Rust vs Go for systems programming",
+      "expected": "comparison",
+      "got": "comparison",
+      "ok": true
+    },
+    {
+      "query": "Is it true that vitamin C cures the common cold?",
+      "expected": "validation_or_fact_check",
+      "got": "validation_or_fact_check",
+      "ok": true
+    },
+    {
+      "query": "Verify the claim that humans only use 10% of their brain",
+      "expected": "validation_or_fact_check",
+      "got": "validation_or_fact_check",
+      "ok": true
+    },
+    {
+      "query": "Are electric vehicles actually better for the environment?",
+      "expected": "validation_or_fact_check",
+      "got": "validation_or_fact_check",
+      "ok": true
+    },
+    {
+      "query": "Check if drinking 8 glasses of water a day is scientifically",
+      "expected": "validation_or_fact_check",
+      "got": "validation_or_fact_check",
+      "ok": true
+    },
+    {
+      "query": "Is the Earth's core really as hot as the surface of the sun?",
+      "expected": "validation_or_fact_check",
+      "got": "ERR:ValidationError",
+      "ok": false
+    },
+    {
+      "query": "What is the market size of the global cloud computing indust",
+      "expected": "market_landscape",
+      "got": "market_landscape",
+      "ok": true
+    },
+    {
+      "query": "Analyze the competitive landscape of AI coding assistants",
+      "expected": "market_landscape",
+      "got": "market_landscape",
+      "ok": true
+    },
+    {
+      "query": "Market overview of the electric vehicle charging station ind",
+      "expected": "market_landscape",
+      "got": "market_landscape",
+      "ok": true
+    },
+    {
+      "query": "Who are the top players in the cybersecurity software market",
+      "expected": "market_landscape",
+      "got": "market_landscape",
+      "ok": true
+    },
+    {
+      "query": "Emerging trends in the plant-based meat alternative market",
+      "expected": "market_landscape",
+      "got": "market_landscape",
+      "ok": true
+    },
+    {
+      "query": "What does the latest research say about the efficacy of mRNA",
+      "expected": "academic_literature_review",
+      "got": "academic_literature_review",
+      "ok": true
+    },
+    {
+      "query": "Summarize recent academic papers on quantum error correction",
+      "expected": "academic_literature_review",
+      "got": "academic_literature_review",
+      "ok": true
+    },
+    {
+      "query": "What peer-reviewed studies exist on the gut-brain axis and d",
+      "expected": "academic_literature_review",
+      "got": "academic_literature_review",
+      "ok": true
+    },
+    {
+      "query": "Review the literature on reinforcement learning from human f",
+      "expected": "academic_literature_review",
+      "got": "academic_literature_review",
+      "ok": true
+    },
+    {
+      "query": "What does academic research say about the impact of screen t",
+      "expected": "academic_literature_review",
+      "got": "academic_literature_review",
+      "ok": true
+    },
+    {
+      "query": "Conduct due diligence on OpenAI as a company",
+      "expected": "company_due_diligence",
+      "got": "company_due_diligence",
+      "ok": true
+    },
+    {
+      "query": "Evaluate the financial health and recent performance of Nvid",
+      "expected": "company_due_diligence",
+      "got": "company_due_diligence",
+      "ok": true
+    },
+    {
+      "query": "Research the leadership team and product strategy of Anthrop",
+      "expected": "company_due_diligence",
+      "got": "company_due_diligence",
+      "ok": true
+    },
+    {
+      "query": "Assess the competitive risks facing Tesla in 2026",
+      "expected": "company_due_diligence",
+      "got": "company_due_diligence",
+      "ok": true
+    },
+    {
+      "query": "Due diligence report on Snowflake's business model and reven",
+      "expected": "company_due_diligence",
+      "got": "company_due_diligence",
+      "ok": true
+    },
+    {
+      "query": "How do I implement OAuth 2.0 with PKCE in a React applicatio",
+      "expected": "technical_implementation",
+      "got": "technical_implementation",
+      "ok": true
+    },
+    {
+      "query": "Step-by-step guide to deploying a Django app on AWS ECS with",
+      "expected": "technical_implementation",
+      "got": "technical_implementation",
+      "ok": true
+    },
+    {
+      "query": "How to set up a Kubernetes cluster with kubeadm on Ubuntu 24",
+      "expected": "technical_implementation",
+      "got": "technical_implementation",
+      "ok": true
+    },
+    {
+      "query": "Tutorial on building a real-time chat application with WebSo",
+      "expected": "technical_implementation",
+      "got": "technical_implementation",
+      "ok": true
+    },
+    {
+      "query": "How to fine-tune a Llama 3 model using LoRA on custom data",
+      "expected": "technical_implementation",
+      "got": "technical_implementation",
+      "ok": true
+    },
+    {
+      "query": "What are the latest developments in the Ukraine-Russia confl",
+      "expected": "news_or_current_events",
+      "got": "news_or_current_events",
+      "ok": true
+    },
+    {
+      "query": "Recent updates on the FDA approval of new Alzheimer's treatm",
+      "expected": "news_or_current_events",
+      "got": "news_or_current_events",
+      "ok": true
+    },
+    {
+      "query": "What is the current state of the US-China trade war in 2026?",
+      "expected": "news_or_current_events",
+      "got": "news_or_current_events",
+      "ok": true
+    },
+    {
+      "query": "Latest news on NASA's Artemis lunar program",
+      "expected": "news_or_current_events",
+      "got": "news_or_current_events",
+      "ok": true
+    },
+    {
+      "query": "Recent breakthroughs in nuclear fusion energy announced this",
+      "expected": "news_or_current_events",
+      "got": "news_or_current_events",
+      "ok": true
+    },
+    {
+      "query": "What are the GDPR requirements for processing personal data ",
+      "expected": "policy_legal_regulatory",
+      "got": "policy_legal_regulatory",
+      "ok": true
+    },
+    {
+      "query": "Analyze the implications of the EU AI Act on foundation mode",
+      "expected": "policy_legal_regulatory",
+      "got": "policy_legal_regulatory",
+      "ok": true
+    },
+    {
+      "query": "What is the legal framework around self-driving car liabilit",
+      "expected": "policy_legal_regulatory",
+      "got": "policy_legal_regulatory",
+      "ok": true
+    },
+    {
+      "query": "Compare data privacy laws across California, Brazil, and Ind",
+      "expected": "policy_legal_regulatory",
+      "got": "policy_legal_regulatory",
+      "ok": true
+    },
+    {
+      "query": "What securities regulations apply to cryptocurrency exchange",
+      "expected": "policy_legal_regulatory",
+      "got": "policy_legal_regulatory",
+      "ok": true
+    },
+    {
+      "query": "Explain the concept of entanglement entropy in quantum field",
+      "expected": "custom",
+      "got": "ERR:ValidationError",
+      "ok": false
+    },
+    {
+      "query": "Write a comprehensive history of the Byzantine Empire",
+      "expected": "custom",
+      "got": "custom",
+      "ok": true
+    },
+    {
+      "query": "How does the scoring system work in Olympic figure skating?",
+      "expected": "custom",
+      "got": "technical_implementation",
+      "ok": false
+    },
+    {
+      "query": "Explain the philosophy of Stoicism and its modern applicatio",
+      "expected": "custom",
+      "got": "academic_literature_review",
+      "ok": false
+    },
+    {
+      "query": "What is the best strategy for winning at chess as Black?",
+      "expected": "custom",
+      "got": "technical_implementation",
+      "ok": false
+    },
+    {
+      "query": "How do tsunamis form and what determines their destructive p",
+      "expected": "custom",
+      "got": "academic_literature_review",
+      "ok": false
+    },
+    {
+      "query": "Design a theoretical mission to colonize Mars with current t",
+      "expected": "custom",
+      "got": "technical_implementation",
+      "ok": false
+    },
+    {
+      "query": "What are the key differences between Buddhism and Hinduism?",
+      "expected": "comparison",
+      "got": "comparison",
+      "ok": true
+    },
+    {
+      "query": "Analyze the nutritional differences between a keto and a Med",
+      "expected": "comparison",
+      "got": "comparison",
+      "ok": true
+    },
+    {
+      "query": "What is the evidence for and against the existence of dark m",
+      "expected": "validation_or_fact_check",
+      "got": "validation_or_fact_check",
+      "ok": true
+    }
+  ]
+}

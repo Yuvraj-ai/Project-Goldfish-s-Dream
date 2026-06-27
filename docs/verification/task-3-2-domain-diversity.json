@@ -1,0 +1,68 @@
+[
+  {
+    "query": "Latest developments in solid-state battery technology for electric vehicles",
+    "elapsed": 109.39391660690308,
+    "total_sources": 22,
+    "unique_domains": 19,
+    "top_domain": "www.facebook.com",
+    "top_pct": 9.090909090909092,
+    "domains": {
+      "www.facebook.com": 2,
+      "www.cambridgeenertech.com": 2,
+      "www.youtube.com": 2,
+      "www.idtechex.com": 1,
+      "www.bonnenbatteries.com": 1,
+      "www.autonews.com": 1,
+      "to7motor.com": 1,
+      "slate.greyb.com": 1,
+      "www.materialsfutures.org": 1,
+      "iopscience.iop.org": 1
+    },
+    "report_chars": 15911,
+    "status": "ok"
+  },
+  {
+    "query": "What are the health effects of microplastics in drinking water?",
+    "elapsed": 163.43567061424255,
+    "total_sources": 30,
+    "unique_domains": 23,
+    "top_domain": "pmc.ncbi.nlm.nih.gov",
+    "top_pct": 13.333333333333334,
+    "domains": {
+      "pmc.ncbi.nlm.nih.gov": 4,
+      "www.frontiersin.org": 3,
+      "www.sciencedirect.com": 3,
+      "cdn.who.int": 1,
+      "earth.org": 1,
+      "med.stanford.edu": 1,
+      "pubs.acs.org": 1,
+      "toxicfreefuture.org": 1,
+      "www.eea.europa.eu": 1,
+      "www.nature.com": 1
+    },
+    "report_chars": 16764,
+    "status": "ok"
+  },
+  {
+    "query": "Current state of the global semiconductor chip shortage in 2026",
+    "elapsed": 112.10290622711182,
+    "total_sources": 20,
+    "unique_domains": 17,
+    "top_domain": "www.linkedin.com",
+    "top_pct": 15.0,
+    "domains": {
+      "www.linkedin.com": 3,
+      "www.semiconductors.org": 2,
+      "enkiai.com": 1,
+      "suntsu.com": 1,
+      "www.z2data.com": 1,
+      "www.fortunebusinessinsights.com": 1,
+      "www.precedenceresearch.com": 1,
+      "www.techinsights.com": 1,
+      "www.deloitte.com": 1,
+      "www.semiconproduct.com": 1
+    },
+    "report_chars": 16590,
+    "status": "ok"
+  }
+]
