@@ -1,0 +1,115 @@
+{
+  "task": "3-10",
+  "pricing": {
+    "google/gemini-2.5-flash": {
+      "input": 3e-07,
+      "output": 2.5e-06
+    },
+    "google/gemini-2.5-pro": {
+      "input": 1.25e-06,
+      "output": 1e-05
+    },
+    "openai/gpt-4o-mini-search-preview": {
+      "input": 1.5e-07,
+      "output": 6e-07
+    },
+    "openai/gpt-4o-search-preview": {
+      "input": 2.5e-06,
+      "output": 1e-05
+    },
+    "openai/gpt-4o-2024-11-20": {
+      "input": 2.5e-06,
+      "output": 1e-05
+    },
+    "openai/gpt-4o-2024-08-06": {
+      "input": 2.5e-06,
+      "output": 1e-05
+    },
+    "openai/gpt-4o-mini": {
+      "input": 1.5e-07,
+      "output": 6e-07
+    },
+    "openai/gpt-4o-mini-2024-07-18": {
+      "input": 1.5e-07,
+      "output": 6e-07
+    },
+    "openai/gpt-4o-2024-05-13": {
+      "input": 5e-06,
+      "output": 1.5e-05
+    },
+    "openai/gpt-4o": {
+      "input": 2.5e-06,
+      "output": 1e-05
+    }
+  },
+  "routed_models": {
+    "fast": "openai/gpt-4o-mini",
+    "balanced": "openai/gpt-4o",
+    "quality": "openai/gpt-4o"
+  },
+  "always_quality_model": "openai/gpt-4o",
+  "task_distribution": [
+    [
+      "classification",
+      "fast",
+      1,
+      800,
+      200
+    ],
+    [
+      "summarization",
+      "fast",
+      2,
+      2000,
+      500
+    ],
+    [
+      "search_query_generation",
+      "fast",
+      4,
+      500,
+      100
+    ],
+    [
+      "planning",
+      "balanced",
+      2,
+      3000,
+      1000
+    ],
+    [
+      "extraction",
+      "balanced",
+      1,
+      5000,
+      1000
+    ],
+    [
+      "reasoning",
+      "quality",
+      12,
+      4000,
+      2000
+    ],
+    [
+      "report_writing",
+      "quality",
+      4,
+      3000,
+      3000
+    ],
+    [
+      "review",
+      "quality",
+      1,
+      8000,
+      1000
+    ]
+  ],
+  "total_routed": 0.59948,
+  "total_always": 0.6305,
+  "savings": 0.03102,
+  "savings_pct": 4.9,
+  "gate": ">=20%",
+  "result": "FAIL"
+}

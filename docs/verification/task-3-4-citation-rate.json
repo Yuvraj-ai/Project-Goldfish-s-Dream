@@ -1,0 +1,228 @@
+{
+  "task": "3-4",
+  "total": 24,
+  "passed": 23,
+  "failed": 1,
+  "rate_pct": 95.8,
+  "gate": ">90%",
+  "result": "PASS",
+  "elapsed_s": 3.1,
+  "results": [
+    {
+      "url": "https://www.python.org",
+      "label": "Python homepage",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://github.com",
+      "label": "GitHub homepage",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Python_(programming_language)",
+      "label": "Wikipedia Python",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://docs.python.org/3/",
+      "label": "Python docs",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://pypi.org",
+      "label": "PyPI homepage",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://news.ycombinator.com",
+      "label": "Hacker News",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://arxiv.org",
+      "label": "arXiv",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://www.w3.org",
+      "label": "W3C",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://stackoverflow.com",
+      "label": "Stack Overflow",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://www.ietf.org",
+      "label": "IETF",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://www.python.org/nonexistent-page-12345",
+      "label": "Python 404",
+      "expected": "dead",
+      "got": "dead",
+      "status_code": 404,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://github.com/nonexistent-org-xyz123/nonexistent-repo",
+      "label": "GitHub 404",
+      "expected": "dead",
+      "got": "dead",
+      "status_code": 404,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/NonexistentPageXYZ",
+      "label": "Wikipedia 404",
+      "expected": "dead",
+      "got": "dead",
+      "status_code": 404,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://arxiv.org/abs/9999.99999",
+      "label": "arXiv 404",
+      "expected": "dead",
+      "got": "dead",
+      "status_code": 404,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://pypi.org/project/nonexistent-package-xyz-123/",
+      "label": "PyPI 404",
+      "expected": "dead",
+      "got": "alive",
+      "status_code": 200,
+      "pass": false,
+      "error": ""
+    },
+    {
+      "url": "https://httpbin.org/redirect-to?url=https%3A%2F%2Fwww.python.org",
+      "label": "302 redirect to Python",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://github.com/langchain-ai",
+      "label": "GitHub org (redirect)",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://www.google.com",
+      "label": "Google homepage",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://www.wikipedia.org",
+      "label": "Wikipedia portal",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://www.eff.org",
+      "label": "EFF",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://www.amazon.com",
+      "label": "Amazon (may bot-block)",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 202,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://www.cloudflare.com",
+      "label": "Cloudflare (may bot-block)",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://www.linkedin.com",
+      "label": "LinkedIn (may bot-block)",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    },
+    {
+      "url": "https://example.com",
+      "label": "RFC 2606 reserved domain",
+      "expected": "alive",
+      "got": "alive",
+      "status_code": 200,
+      "pass": true,
+      "error": ""
+    }
+  ]
+}

@@ -1159,6 +1159,13 @@ class SectionOutput(BaseModel):
     citation_ids: List[str] = Field(default_factory=list)
     acknowledged_conflicts: List[str] = Field(default_factory=list)
 
+    @field_validator("citation_ids", "acknowledged_conflicts", mode="before")
+    @classmethod
+    def coerce_none_to_empty_list(cls, v):
+        if v is None:
+            return []
+        return v
+
 
 async def write_section(
     section: dict, evidence_cards: list, profile, subquestions: list, config: RunnableConfig

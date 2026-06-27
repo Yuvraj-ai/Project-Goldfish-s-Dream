@@ -1,0 +1,92 @@
+{
+  "graph_model": "openai/gpt-4o-mini",
+  "eval_model": "openai/gpt-4o",
+  "baseline": {
+    "avg_score": 6.5,
+    "min_score": 5.0,
+    "max_score": 8.0,
+    "num_queries": 10,
+    "query_scores": {}
+  },
+  "results": [
+    {
+      "id": "comp_001",
+      "query": "Compare React and Vue.js for building enterprise dashboards in 2026",
+      "status": "ok",
+      "elapsed": 137.6283242702484,
+      "report_chars": 18659,
+      "n_sources": 41,
+      "scores": {
+        "overall_quality": {
+          "research_depth": 0.6,
+          "source_quality": 0.8,
+          "analytical_rigor": 0.6,
+          "practical_value": 0.6,
+          "balance_and_objectivity": 0.6,
+          "writing_quality": 0.8
+        },
+        "overall_avg": 0.6666666666666666,
+        "relevance": 0.2,
+        "structure": 0.2,
+        "correctness": 1.0,
+        "completeness": 0.2
+      }
+    },
+    {
+      "id": "acad_001",
+      "query": "What are the latest advances in retrieval-augmented generation (RAG) since 2024?",
+      "status": "ok",
+      "elapsed": 135.08364701271057,
+      "report_chars": 22949,
+      "n_sources": 65,
+      "scores": {
+        "overall_quality": {
+          "research_depth": 0.2,
+          "source_quality": 0.2,
+          "analytical_rigor": 0.2,
+          "practical_value": 0.2,
+          "balance_and_objectivity": 0.2,
+          "writing_quality": 0.2
+        },
+        "overall_avg": 0.19999999999999998,
+        "relevance": 0.2,
+        "structure": 0.2,
+        "correctness": 1.0,
+        "completeness": 0.2
+      }
+    },
+    {
+      "id": "news_001",
+      "query": "What are the major AI regulation developments in the EU and US in 2026?",
+      "status": "ok",
+      "elapsed": 121.43226981163025,
+      "report_chars": 19271,
+      "n_sources": 34,
+      "scores": {
+        "overall_quality": {
+          "research_depth": 0.6,
+          "source_quality": 0.8,
+          "analytical_rigor": 0.6,
+          "practical_value": 0.6,
+          "balance_and_objectivity": 0.6,
+          "writing_quality": 0.6
+        },
+        "overall_avg": 0.6333333333333334,
+        "relevance": 0.2,
+        "structure": 0.4,
+        "correctness": 1.0,
+        "completeness": 0.2
+      }
+    }
+  ],
+  "summary": {
+    "n_total": 3,
+    "n_ok": 3,
+    "n_errors": 0,
+    "composite_avg_01": 0.43333333333333346,
+    "composite_avg_10": 4.333333333333335,
+    "baseline_avg": 6.5,
+    "delta": -2.166666666666665,
+    "pass": false
+  }
+}
