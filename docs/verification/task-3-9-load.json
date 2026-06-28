@@ -1,0 +1,40 @@
+{
+  "task": "3-9",
+  "graph_model": "openai/gpt-4o-mini",
+  "queries": [
+    "Compare React and Vue.js for building enterprise dashboards in 2026",
+    "What are the latest advances in retrieval-augmented generation (RAG) since 2024?",
+    "What are the major AI regulation developments in the EU and US in 2026?"
+  ],
+  "concurrent": true,
+  "wall_clock_s": 210.7,
+  "concurrency_overhead": 1.0,
+  "runs": [
+    {
+      "label": "load-1",
+      "query": "Compare React and Vue.js for building enterprise dashboards ",
+      "status": "ok",
+      "elapsed": 210.7,
+      "sources": 87,
+      "report_chars": 25175
+    },
+    {
+      "label": "load-2",
+      "query": "What are the latest advances in retrieval-augmented generati",
+      "status": "ok",
+      "elapsed": 116.9,
+      "sources": 25,
+      "report_chars": 16032
+    },
+    {
+      "label": "load-3",
+      "query": "What are the major AI regulation developments in the EU and ",
+      "status": "ok",
+      "elapsed": 143.9,
+      "sources": 28,
+      "report_chars": 17324
+    }
+  ],
+  "gate": "overhead <=3x, zero errors",
+  "result": "PASS"
+}

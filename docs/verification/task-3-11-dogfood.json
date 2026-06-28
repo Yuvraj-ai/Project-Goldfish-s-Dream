@@ -1,0 +1,25 @@
+{
+  "task": "3-11",
+  "query": "What are the environmental impacts of data centers and AI compute?",
+  "status": "ok",
+  "elapsed": 214.5,
+  "sources": 56,
+  "report_chars": 22025,
+  "features_fired": {
+    "evidence_first": false,
+    "section_writers": true,
+    "reviewer_loop": true,
+    "citation_verification": true
+  },
+  "feature_flags": {
+    "enable_evidence_first": true,
+    "enable_mode_classification": true,
+    "enable_citation_verification": true,
+    "enable_section_writers": true,
+    "enable_reviewer_loop": true,
+    "enable_search_aggregation": true,
+    "enable_academic_search": true,
+    "enable_storm_research": true,
+    "enable_model_routing": false
+  }
+}

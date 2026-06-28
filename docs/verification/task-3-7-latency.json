@@ -1,0 +1,49 @@
+{
+  "task": "3-7",
+  "n_runs": 6,
+  "model": "openai/gpt-4o-mini",
+  "gate": "<=600s (10 min)",
+  "mean_s": 129.7,
+  "median_s": 128.0,
+  "min_s": 109,
+  "max_s": 163,
+  "result": "PASS",
+  "runs": [
+    {
+      "query": "Compare React and Vue.js for enterprise dashboards",
+      "elapsed": 138,
+      "sources": 41,
+      "report_chars": 18659
+    },
+    {
+      "query": "Latest advances in RAG since 2024",
+      "elapsed": 135,
+      "sources": 65,
+      "report_chars": 22949
+    },
+    {
+      "query": "AI regulation developments in EU and US 2026",
+      "elapsed": 121,
+      "sources": 34,
+      "report_chars": 19271
+    },
+    {
+      "query": "Solid-state battery technology for EVs",
+      "elapsed": 109,
+      "sources": 22,
+      "report_chars": 15911
+    },
+    {
+      "query": "Health effects of microplastics in drinking water",
+      "elapsed": 163,
+      "sources": 30,
+      "report_chars": 16764
+    },
+    {
+      "query": "Global semiconductor chip shortage 2026",
+      "elapsed": 112,
+      "sources": 20,
+      "report_chars": 16590
+    }
+  ]
+}

@@ -15,11 +15,11 @@
 | 3-4 | Citation Verification Rate | ✅ **PASS** (95.8%) | 2026-06-28 | 23/24 real URLs correct; 3.1s |
 | 3-5 | PDF/DOCX Rendering | ✅ **PASS** | 2026-06-23 | Verified manually |
 | 3-6 | Human Eval | ❌ Not run | — | Needs human raters |
-| 3-7 | Latency Budget | ❌ Not run | — | Needs dedicated timing run |
-| 3-8 | Client Disconnect Resilience | ❌ Not run | — | Needs disconnect test infra |
-| 3-9 | Load Test | ❌ Not run | — | Needs load test infra |
+| 3-7 | Latency Budget | ✅ **PASS** (max 2.7 min) | 2026-06-28 | 6 runs sampled; gate ≤10 min |
+| 3-8 | Client Disconnect Resilience | ❌ Not run | — | Needs API server + disconnect tooling |
+| 3-9 | Load Test | ✅ **PASS** | 2026-06-28 | 3 concurrent runs, 1.00x overhead, zero errors |
 | 3-10 | Model Routing Cost Savings | ⚠️ **4.9%** (gate: ≥20%) | 2026-06-28 | BALANCED == QUALITY tier config limits savings |
-| 3-11 | Dogfooding + Canary | ❌ Not run | — | Needs full E2E with API key |
+| 3-11 | Dogfooding + Canary | ⚠️ **Partial** | 2026-06-28 | All flags on (except model_routing — needs Google key). 56 sources, 22K report |
 
 ---
 
