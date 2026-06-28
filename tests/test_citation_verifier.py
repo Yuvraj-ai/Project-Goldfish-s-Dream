@@ -2,7 +2,7 @@
 
 import pytest
 import respx
-from httpx import Response
+from httpx import Response, TimeoutException
 
 from open_deep_research.citation_verifier import CitationVerifier
 
@@ -76,3 +76,48 @@ async def test_verify_batch_parallel():
         assert results["https://example.com/1"]["status"] == "alive"
         assert results["https://example.com/2"]["status"] == "dead"
         assert results["https://example.com/3"]["status"] == "alive"
+
+
+@pytest.mark.asyncio
+async def test_verify_url_server_error():
+    """Server error (500) returns alive status."""
+    async with respx.mock:
+        respx.get("https://example.com/error").mock(return_value=Response(500))
+        verifier = CitationVerifier()
+        result = await verifier.verify_url("https://example.com/error")
+        assert result["status"] == "alive"
+        assert result["status_code"] == 500
+
+
+@pytest.mark.asyncio
+async def test_verify_url_timeout_with_head_fallback():
+    """TimeoutException triggers HEAD fallback."""
+    async with respx.mock:
+        respx.get("https://example.com/timeout").mock(side_effect=TimeoutException("timed out"))
+        respx.head("https://example.com/timeout").mock(return_value=Response(200))
+        verifier = CitationVerifier()
+        result = await verifier.verify_url("https://example.com/timeout")
+        assert result["status"] == "alive"
+
+
+@pytest.mark.asyncio
+async def test_verify_url_timeout_head_fails():
+    """When both GET and HEAD timeout, return unverified."""
+    async with respx.mock:
+        respx.get("https://example.com/bad").mock(side_effect=TimeoutException("timed out"))
+        respx.head("https://example.com/bad").mock(side_effect=Exception("head also failed"))
+        verifier = CitationVerifier()
+        result = await verifier.verify_url("https://example.com/bad")
+        assert result["status"] == "unverified"
+
+
+@pytest.mark.asyncio
+async def test_verifier_close():
+    """Close method cleans up shared client."""
+    async with respx.mock:
+        respx.get("https://example.com/close").mock(return_value=Response(200, text="OK"))
+        verifier = CitationVerifier()
+        await verifier.verify_url("https://example.com/close")
+        await verifier.close()
+        # close again is a no-op
+        await verifier.close()

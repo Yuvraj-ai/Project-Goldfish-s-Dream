@@ -1,8 +1,9 @@
 """Tests for utility functions in utils.py — string utils, token checks, API key
 resolution, message manipulation, websearch detection, and academic search error paths."""
+import asyncio
 from datetime import datetime
 from enum import Enum
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -21,6 +22,7 @@ from open_deep_research.utils import (
     get_config_value,
     get_domain,
     get_domain_histogram,
+    get_mcp_access_token,
     get_model_token_limit,
     get_all_tools,
     get_notes_from_tool_calls,
@@ -28,11 +30,16 @@ from open_deep_research.utils import (
     get_search_tool,
     get_tavily_api_key,
     get_today_str,
+    get_tokens,
     is_token_limit_exceeded,
+    fetch_tokens,
+    set_tokens,
     openai_websearch_called,
     pubmed_search,
     remove_up_to_last_ai_message,
     semantic_scholar_search,
+    summarize_webpage,
+    tavily_search_async,
     temporal_relevance_boost,
     think_tool,
 )
@@ -985,3 +992,312 @@ class TestOpenaiWebsearchCalledMissingAttribute:
         response = object()
         with pytest.raises(AttributeError):
             openai_websearch_called(response)
+
+
+class TestSummarizeWebpage:
+    @pytest.mark.asyncio
+    async def test_timeout_returns_content(self):
+        from unittest.mock import AsyncMock
+        mock_model = AsyncMock()
+        mock_model.ainvoke.side_effect = asyncio.TimeoutError()
+        result = await summarize_webpage(mock_model, "test content")
+        assert result == "test content"
+
+    @pytest.mark.asyncio
+    async def test_generic_exception_returns_content(self):
+        from unittest.mock import AsyncMock
+        mock_model = AsyncMock()
+        mock_model.ainvoke.side_effect = Exception("generic error")
+        result = await summarize_webpage(mock_model, "test content")
+        assert result == "test content"
+
+
+class TestTavilySearchAsync:
+    @pytest.mark.asyncio
+    async def test_returns_search_results(self):
+        mock_client = MagicMock()
+        mock_client.search = AsyncMock(return_value={"results": [{"title": "Test", "url": "https://a.com"}]})
+        with patch("open_deep_research.utils.AsyncTavilyClient", return_value=mock_client):
+            with patch("open_deep_research.utils.get_tavily_api_key", return_value="tvly-test"):
+                results = await tavily_search_async(["test query"])
+        assert len(results) == 1
+
+
+class TestGetMcpAccessToken:
+    @pytest.mark.asyncio
+    async def test_successful_token_exchange(self):
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value={"access_token": "mcp-token"})
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_resp)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_cm):
+            result = await get_mcp_access_token("supabase-token", "https://mcp.example.com")
+        assert result == {"access_token": "mcp-token"}
+
+    @pytest.mark.asyncio
+    async def test_failed_exchange_returns_none(self):
+        mock_resp = AsyncMock()
+        mock_resp.status = 401
+        mock_resp.text = AsyncMock(return_value="unauthorized")
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_resp)
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_cm):
+            result = await get_mcp_access_token("bad-token", "https://mcp.example.com")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_exception_returns_none(self):
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(side_effect=Exception("connection error"))
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_cm):
+            result = await get_mcp_access_token("token", "https://mcp.example.com")
+        assert result is None
+
+
+class TestSummarizeWebpageHappyPath:
+    @pytest.mark.asyncio
+    async def test_successful_summarization(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_summary = MagicMock()
+        mock_summary.summary = "This is a summary"
+        mock_summary.key_excerpts = "Key excerpt"
+        mock_model = AsyncMock()
+        mock_model.ainvoke = AsyncMock(return_value=mock_summary)
+        result = await summarize_webpage(mock_model, "test content")
+        assert "<summary>" in result
+        assert "This is a summary" in result
+        assert "Key excerpt" in result
+
+
+class TestGetSearchAggregator:
+    def test_tavily_provider_registered(self):
+        from unittest.mock import MagicMock
+        from open_deep_research.search_aggregator import SearchAggregator
+
+        config = MagicMock()
+        config.search_providers = ["tavily"]
+        config.enable_academic_search = False
+
+        result = get_search_aggregator(config)
+        assert isinstance(result, SearchAggregator)
+        assert "tavily" in result.search_functions
+
+    def test_duckduckgo_provider_registered(self):
+        from unittest.mock import MagicMock
+        from open_deep_research.search_aggregator import SearchAggregator
+
+        config = MagicMock()
+        config.search_providers = ["duckduckgo"]
+        config.enable_academic_search = False
+
+        result = get_search_aggregator(config)
+        assert isinstance(result, SearchAggregator)
+        assert "duckduckgo" in result.search_functions
+
+    def test_both_providers_registered(self):
+        from unittest.mock import MagicMock
+        from open_deep_research.search_aggregator import SearchAggregator
+
+        config = MagicMock()
+        config.search_providers = ["tavily", "duckduckgo"]
+        config.enable_academic_search = False
+
+        result = get_search_aggregator(config)
+        assert isinstance(result, SearchAggregator)
+        assert "tavily" in result.search_functions
+        assert "duckduckgo" in result.search_functions
+
+    def test_academic_providers_registered(self):
+        from unittest.mock import MagicMock
+        from open_deep_research.search_aggregator import SearchProviderConfig
+
+        config = MagicMock()
+        config.search_providers = []
+        config.enable_academic_search = True
+        config.arxiv_enabled = True
+        config.semantic_scholar_enabled = True
+        config.pubmed_enabled = True
+        config.crossref_enabled = True
+
+        result = get_search_aggregator(config)
+        provider_names = [p.name for p in result.providers]
+        assert "arxiv" in provider_names
+        assert "semantic_scholar" in provider_names
+        assert "pubmed" in provider_names
+        assert "crossref" in provider_names
+
+    @pytest.mark.asyncio
+    async def test_tavily_inner_function_no_key(self):
+        from unittest.mock import MagicMock
+
+        config = MagicMock()
+        config.search_providers = ["tavily"]
+        config.enable_academic_search = False
+
+        aggregator = get_search_aggregator(config)
+        fn = aggregator.search_functions["tavily"]
+        result = await fn("test query")
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_duckduckgo_inner_function_fallback(self):
+        from unittest.mock import MagicMock, patch
+
+        config = MagicMock()
+        config.search_providers = ["duckduckgo"]
+        config.enable_academic_search = False
+
+        aggregator = get_search_aggregator(config)
+        fn = aggregator.search_functions["duckduckgo"]
+        with patch("duckduckgo_search.DDGS", side_effect=Exception("no net")):
+            result = await fn("test query")
+        assert result == []
+
+
+class TestGetTokens:
+    @pytest.mark.asyncio
+    async def test_get_tokens_missing_thread_id(self):
+        with patch("open_deep_research.utils.get_store") as mock_get_store:
+            mock_store = AsyncMock()
+            mock_store.aget = AsyncMock()
+            mock_get_store.return_value = mock_store
+            result = await get_tokens({"configurable": {}})
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_tokens_missing_user_id(self):
+        with patch("open_deep_research.utils.get_store") as mock_get_store:
+            mock_store = AsyncMock()
+            mock_store.aget = AsyncMock()
+            mock_get_store.return_value = mock_store
+            result = await get_tokens(
+                {"configurable": {"thread_id": "t1"}, "metadata": {}}
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_tokens_no_stored_tokens(self):
+        config = {
+            "configurable": {"thread_id": "t1"},
+            "metadata": {"owner": "user1"},
+        }
+        with patch("open_deep_research.utils.get_store") as mock_get_store:
+            mock_store = AsyncMock()
+            mock_store.aget = AsyncMock(return_value=None)
+            mock_get_store.return_value = mock_store
+            result = await get_tokens(config)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_tokens_expired(self):
+        from datetime import datetime, timedelta, timezone
+
+        config = {
+            "configurable": {"thread_id": "t1"},
+            "metadata": {"owner": "user1"},
+        }
+        mock_token_value = MagicMock()
+        mock_token_value.value = {"expires_in": 0}
+        mock_token_value.created_at = datetime.now(timezone.utc) - timedelta(hours=1)
+
+        with patch("open_deep_research.utils.get_store") as mock_get_store:
+            mock_store = AsyncMock()
+            mock_store.aget = AsyncMock(return_value=mock_token_value)
+            mock_store.adelete = AsyncMock()
+            mock_get_store.return_value = mock_store
+            result = await get_tokens(config)
+        assert result is None
+        mock_store.adelete.assert_awaited_once()
+
+
+class TestSetTokens:
+    @pytest.mark.asyncio
+    async def test_set_tokens_missing_thread_id(self):
+        with patch("open_deep_research.utils.get_store") as mock_get_store:
+            mock_store = AsyncMock()
+            mock_store.aput = AsyncMock()
+            mock_get_store.return_value = mock_store
+            result = await set_tokens({"configurable": {}}, {"token": "val"})
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_set_tokens_missing_user_id(self):
+        with patch("open_deep_research.utils.get_store") as mock_get_store:
+            mock_store = AsyncMock()
+            mock_store.aput = AsyncMock()
+            mock_get_store.return_value = mock_store
+            result = await set_tokens(
+                {"configurable": {"thread_id": "t1"}, "metadata": {}}, {"token": "val"}
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_set_tokens_stores(self):
+        config = {
+            "configurable": {"thread_id": "t1"},
+            "metadata": {"owner": "user1"},
+        }
+        tokens = {"access_token": "mcp-token"}
+        with patch("open_deep_research.utils.get_store") as mock_get_store:
+            mock_store = AsyncMock()
+            mock_store.aput = AsyncMock()
+            mock_get_store.return_value = mock_store
+            result = await set_tokens(config, tokens)
+        assert result is None
+        mock_store.aput.assert_awaited_once_with(
+            ("user1", "tokens"), "data", tokens
+        )
+
+
+class TestFetchTokens:
+    @pytest.mark.asyncio
+    async def test_fetch_tokens_no_supabase_token(self):
+        config = {
+            "configurable": {"thread_id": "t1"},
+            "metadata": {"owner": "user1"},
+        }
+        with patch(
+            "open_deep_research.utils.get_tokens", new_callable=AsyncMock
+        ) as mock_get_tokens:
+            mock_get_tokens.return_value = None
+            result = await fetch_tokens(config)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_tokens_no_mcp_config(self):
+        config = {
+            "configurable": {
+                "thread_id": "t1",
+                "x-supabase-access-token": "sb-token",
+            },
+            "metadata": {"owner": "user1"},
+        }
+        with patch(
+            "open_deep_research.utils.get_tokens", new_callable=AsyncMock
+        ) as mock_get_tokens:
+            mock_get_tokens.return_value = None
+            result = await fetch_tokens(config)
+        assert result is None

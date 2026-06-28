@@ -110,3 +110,129 @@ async def test_find_similar_topics_integration():
 
     empty_results = await memory.find_similar_topics("anything")
     assert isinstance(empty_results, list)
+
+
+@pytest.mark.asyncio
+async def test_find_similar_topics_empty():
+    from unittest.mock import MagicMock, AsyncMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    repo.list_memory_keys = AsyncMock(return_value=[])
+    memory = ResearchMemory(repo)
+    results = await memory.find_similar_topics("test query", top_n=5)
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_find_similar_topics_no_match():
+    from unittest.mock import MagicMock, AsyncMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    repo.list_memory_keys = AsyncMock(return_value=["topic1"])
+    repo.load_memory = AsyncMock(return_value={"title": "unrelated", "summary": "cooking recipes"})
+    memory = ResearchMemory(repo)
+    results = await memory.find_similar_topics("quantum physics", top_n=5)
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_load_nonexistent_topic():
+    from unittest.mock import MagicMock, AsyncMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    repo.load_memory = AsyncMock(return_value=None)
+    memory = ResearchMemory(repo)
+    result = await memory.load_research("nonexistent_hash")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_load_preferences():
+    from unittest.mock import MagicMock, AsyncMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    repo.load_memory = AsyncMock(return_value={"citation_style": "apa"})
+    memory = ResearchMemory(repo)
+    result = await memory.load_preferences("user1")
+    assert result == {"citation_style": "apa"}
+
+
+@pytest.mark.asyncio
+async def test_save_source_summary():
+    from unittest.mock import MagicMock, AsyncMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    repo.save_memory = AsyncMock()
+    memory = ResearchMemory(repo)
+    await memory.save_source_summary("https://example.com", {"summary": "test"})
+    repo.save_memory.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_source_summary():
+    from unittest.mock import MagicMock, AsyncMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    repo.load_memory = AsyncMock(return_value={"summary": "test"})
+    memory = ResearchMemory(repo)
+    result = await memory.get_source_summary("https://example.com")
+    assert result == {"summary": "test"}
+
+
+@pytest.mark.asyncio
+async def test_list_research_topics():
+    from unittest.mock import MagicMock, AsyncMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    repo.list_memory_keys = AsyncMock(return_value=["topic1", "topic2"])
+    memory = ResearchMemory(repo)
+    result = await memory.list_research_topics()
+    assert result == ["topic1", "topic2"]
+
+
+@pytest.mark.asyncio
+async def test_tokenize():
+    from unittest.mock import MagicMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    memory = ResearchMemory(repo)
+    result = memory._tokenize("The quick brown fox")
+    assert "quick" in result
+    assert "the" not in result  # stopword removed
+
+
+@pytest.mark.asyncio
+async def test_find_similar_topics_empty_query():
+    """Empty query returns empty list."""
+    from unittest.mock import MagicMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    memory = ResearchMemory(repo)
+    result = await memory.find_similar_topics("")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_find_similar_topics_missing_data():
+    """When repo returns no data for a key, it should be skipped."""
+    from unittest.mock import MagicMock, AsyncMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    repo.list_memory_keys = AsyncMock(return_value=["topic1"])
+    repo.load_memory = AsyncMock(return_value=None)
+    memory = ResearchMemory(repo)
+    result = await memory.find_similar_topics("quantum computing")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_find_similar_topics_no_match():
+    """When topic words are empty (stopword-only title/summary), skip."""
+    from unittest.mock import MagicMock, AsyncMock
+    from open_deep_research.api.memory import ResearchMemory
+    repo = MagicMock()
+    repo.list_memory_keys = AsyncMock(return_value=["topic1"])
+    repo.load_memory = AsyncMock(return_value={"title": "the a an", "summary": "is are was"})
+    memory = ResearchMemory(repo)
+    result = await memory.find_similar_topics("quantum computing")
+    assert result == []

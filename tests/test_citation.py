@@ -111,3 +111,24 @@ def test_inline_citation_missing_date():
     source_no_date = {**SAMPLE_SOURCE, "date": ""}
     result = formatter.format_inline(source_no_date)
     assert "n.d." in result
+
+
+def test_parse_source_invalid_date():
+    """Invalid date string should be silently ignored."""
+    formatter = CitationFormatter()
+    entry = formatter._parse_source({**SAMPLE_SOURCE, "date": "invalid"})
+    assert entry.year is None
+
+
+def test_parse_source_empty_date_index_error():
+    """Empty date string should be silently ignored."""
+    formatter = CitationFormatter()
+    entry = formatter._parse_source({**SAMPLE_SOURCE, "date": ""})
+    assert entry.year is None
+
+
+def test_fallback_citation_style():
+    """Unknown style falls back to generic format."""
+    formatter = CitationFormatter("unknown")
+    result = formatter.format_inline(SAMPLE_SOURCE)
+    assert "Example Press" in result

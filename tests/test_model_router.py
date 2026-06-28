@@ -110,3 +110,60 @@ def test_router_logs_selection():
     model, tier = router.select_with_tier(TaskType.SUMMARIZATION, input_length=100)
     assert isinstance(model, str)
     assert tier in (ModelTier.FAST, ModelTier.BALANCED, ModelTier.QUALITY)
+
+
+def test_long_input_upgrades_from_fast():
+    from open_deep_research.api.model_router import ModelRouter, ModelTier, TaskType
+    router = ModelRouter()
+    model = router.select(TaskType.SUMMARIZATION, input_length=100)
+    long_model = router.select(TaskType.SUMMARIZATION, input_length=100_000)
+    assert model != long_model
+
+
+def test_unsupported_task_type_fallsback():
+    from open_deep_research.api.model_router import ModelRouter, ModelTier, TaskType
+    router = ModelRouter()
+    from open_deep_research.api.model_router import _DEFAULT_TIER_MAP, _LONG_INPUT_THRESHOLD
+    # Non-existent task enum value - use _resolve_tier directly to test fallback
+    tier = router._resolve_tier("nonexistent", 100, None)
+    assert tier == ModelTier.BALANCED
+
+
+def test_empty_tier_map_fallback():
+    from open_deep_research.api.model_router import ModelRouter, ModelTier, TaskType
+    router = ModelRouter(tier_map={})
+    # Empty map means all tasks fall back to BALANCED via _resolve_tier
+    tier = router._resolve_tier("anything", 100, None)
+    assert tier == ModelTier.BALANCED
+
+
+def test_select_with_tier_if_enabled_disabled():
+    from open_deep_research.api.model_router import ModelRouter, ModelTier, TaskType
+    router = ModelRouter()
+    result = router.select_with_tier_if_enabled(TaskType.SUMMARIZATION, enabled=False)
+    assert result is None
+
+
+def test_complexity_hint_overrides_default():
+    from open_deep_research.api.model_router import ModelRouter, ModelTier, TaskType
+    router = ModelRouter()
+    fast_model = router.select(
+        TaskType.REPORT_WRITING, input_length=100, complexity_hint=ModelTier.FAST
+    )
+    quality_model = router.select(TaskType.REPORT_WRITING, input_length=100)
+    # FAST should differ from default QUALITY for report writing
+    assert fast_model != quality_model
+
+
+def test_thread_safety():
+    import concurrent.futures
+    from open_deep_research.api.model_router import ModelRouter, TaskType
+    router = ModelRouter()
+
+    def select():
+        return router.select(TaskType.SUMMARIZATION, input_length=1000)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        futures = [ex.submit(select) for _ in range(20)]
+        results = [f.result() for f in futures]
+    assert all(r is not None for r in results)

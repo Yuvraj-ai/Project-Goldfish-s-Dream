@@ -3,6 +3,7 @@ import traceback
 
 import pytest
 
+from open_deep_research.api.exceptions import ConflictError, ForbiddenError
 from open_deep_research.exceptions import (
     BudgetExceededError,
     ModelError,
@@ -74,3 +75,21 @@ class TestExceptionSurfacing:
         assert "error_type" in error_artifact
         assert "error_message" in error_artifact
         assert "stack_trace" in error_artifact
+
+
+class TestApiExceptions:
+    def test_conflict_error_default_message(self):
+        err = ConflictError()
+        assert err.status_code == 409
+
+    def test_forbidden_error_default_message(self):
+        err = ForbiddenError()
+        assert err.status_code == 403
+
+    def test_conflict_error_custom_message(self):
+        err = ConflictError(detail="custom conflict")
+        assert "custom conflict" in err.detail
+
+    def test_forbidden_error_custom_message(self):
+        err = ForbiddenError(detail="custom forbidden")
+        assert "custom forbidden" in err.detail

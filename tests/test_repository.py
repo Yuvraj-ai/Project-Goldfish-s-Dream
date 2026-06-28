@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import aiosqlite
 import pytest
 
 from open_deep_research.api.repository import ResearchRepository
@@ -247,5 +248,87 @@ async def test_sqlite_update_run_status(tmp_path):
         run = await repo.get_run(run_id)
         assert run.status == "failed"
         assert run.error == "oops"
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_create_run_persists(tmp_path):
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        run_id = await repo.create_run("test query", {"key": "val"})
+        run = await repo.get_run(run_id)
+        assert run is not None
+        assert run.query == "test query"
+        assert run.config == {"key": "val"}
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_get_nonexistent_returns_none(tmp_path):
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        run = await repo.get_run("nonexistent")
+        assert run is None
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_save_progress_event(tmp_path):
+    from open_deep_research.api.models import ProgressEvent
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        run_id = await repo.create_run("test", {})
+        event = ProgressEvent(
+            seq=0, event_type="node_start", phase="research",
+            message="Starting research",
+        )
+        await repo.append_progress(run_id, event)
+        events = await repo.progress_after(run_id, -1)
+        assert len(events) >= 1
+        assert events[0].event_type == "node_start"
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_progress_events_empty(tmp_path):
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        run_id = await repo.create_run("test", {})
+        events = await repo.progress_after(run_id, -1)
+        assert events == []
+    finally:
+        await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_handles_invalid_path():
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    with pytest.raises(Exception):
+        await SqliteResearchRepository.create("/nonexistent/dir/db.db")
+
+
+@pytest.mark.asyncio
+async def test_sqlite_update_run_status_no_completion(tmp_path):
+    from open_deep_research.api.repository_sqlite import SqliteResearchRepository
+    db_path = str(tmp_path / "test.db")
+    repo = await SqliteResearchRepository.create(db_path)
+    try:
+        run_id = await repo.create_run("q", {})
+        await repo.update_run_status(run_id, "running")
+        run = await repo.get_run(run_id)
+        assert run.status == "running"
+        assert run.completed_at is None
     finally:
         await repo.close()

@@ -111,3 +111,51 @@ async def test_webhook_delivery_failure_logged():
 
     result = await notifier._deliver(client, wh, "research.completed", b"{}")
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_webhook_delivery_with_signature():
+    from unittest.mock import AsyncMock
+    from open_deep_research.api.models import WebhookConfig
+    from open_deep_research.api.webhooks import WebhookNotifier
+
+    wh = WebhookConfig(
+        url="https://example.com/hook",
+        events=["research.completed"],
+        secret="s3cr3t",
+    )
+    notifier = WebhookNotifier(None)  # type: ignore
+    client = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    client.post = AsyncMock(return_value=mock_resp)
+
+    result = await notifier._deliver(client, wh, "research.completed", b'{"key":"val"}')
+    assert result is None
+    client.post.assert_awaited_once()
+    call_headers = client.post.call_args[1]["headers"]
+    assert "X-Webhook-Signature" in call_headers
+
+
+@pytest.mark.asyncio
+async def test_webhook_notifier_close():
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from open_deep_research.api.models import WebhookConfig
+    from open_deep_research.api.webhooks import WebhookNotifier
+
+    wh = WebhookConfig(
+        url="https://example.com/hook",
+        events=["research.completed"],
+    )
+    notifier = WebhookNotifier(None)  # type: ignore
+    client = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    client.post = AsyncMock(return_value=mock_resp)
+
+    await notifier._deliver(client, wh, "research.completed", b"{}")
+    notifier._client = client
+    notifier._delivery_tasks.add(asyncio.create_task(asyncio.sleep(0)))
+    await notifier.close()
+    assert notifier._client is None

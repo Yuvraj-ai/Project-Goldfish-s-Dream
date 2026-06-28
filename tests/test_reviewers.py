@@ -111,6 +111,24 @@ async def test_style_reviewer_too_long():
 
 
 @pytest.mark.asyncio
+async def test_style_reviewer_too_short():
+    """Test style reviewer detects too-short report."""
+    reviewer = StyleReviewer()
+    profile = MockProfile(max_length=100, tone="formal")
+    feedback = await reviewer.review("Short.", profile)
+    assert any("too short" in issue.lower() for issue in feedback.issues)
+
+
+@pytest.mark.asyncio
+async def test_style_reviewer_informal_language():
+    """Test style reviewer detects informal language in formal tone."""
+    reviewer = StyleReviewer()
+    profile = MockProfile(max_length=200, tone="formal")
+    feedback = await reviewer.review("This is gonna be awesome!", profile)
+    assert any("informal" in issue.lower() for issue in feedback.issues)
+
+
+@pytest.mark.asyncio
 async def test_review_feedback_structure():
     """Test ReviewFeedback structure."""
     feedback = ReviewFeedback(

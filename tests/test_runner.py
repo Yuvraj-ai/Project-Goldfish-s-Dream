@@ -52,6 +52,55 @@ async def test_runner_get_status():
 
 
 @pytest.mark.asyncio
+async def test_runner_get_status_completed():
+    import asyncio
+    from open_deep_research.api.runner import ResearchRunner
+    repo = AsyncMock()
+    repo.create_run = AsyncMock(return_value="run_complete")
+    repo.next_seq = AsyncMock(return_value=0)
+
+    async def quick_task():
+        return 42
+
+    task = asyncio.create_task(quick_task())
+    await asyncio.sleep(0.01)
+    ResearchRunner._tasks["run_complete"] = task
+    status = ResearchRunner.get_status("run_complete")
+    assert status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_runner_get_status_failed():
+    import asyncio
+    from open_deep_research.api.runner import ResearchRunner
+
+    async def fail_task():
+        raise ValueError("boom")
+
+    task = asyncio.create_task(fail_task())
+    await asyncio.sleep(0.01)
+    ResearchRunner._tasks["run_fail"] = task
+    status = ResearchRunner.get_status("run_fail")
+    assert status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_runner_get_status_cancelled():
+    import asyncio
+    from open_deep_research.api.runner import ResearchRunner
+
+    async def slow_task():
+        await asyncio.sleep(10)
+
+    task = asyncio.create_task(slow_task())
+    task.cancel()
+    await asyncio.sleep(0.01)
+    ResearchRunner._tasks["run_cancel"] = task
+    status = ResearchRunner.get_status("run_cancel")
+    assert status == "cancelled"
+
+
+@pytest.mark.asyncio
 async def test_runner_semaphore_limits(tmp_path):
     from open_deep_research.api.runner import ResearchRunner
     from open_deep_research.api.repository_sqlite import SqliteResearchRepository

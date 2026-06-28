@@ -307,3 +307,9 @@ class TestProviderManagement:
         state1 = governor.get_provider("unknown_a")
         state2 = governor.get_provider("unknown_b")
         assert state1 is not state2
+
+    def test_singleton_already_initialized(self):
+        """Second ConcurrencyGovernor() call returns cached instance (hits early-return)."""
+        governor = ConcurrencyGovernor()
+        governor2 = ConcurrencyGovernor()
+        assert governor is governor2

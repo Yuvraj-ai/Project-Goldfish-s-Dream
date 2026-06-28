@@ -368,6 +368,25 @@ async def test_save_feedback():
 
 
 @pytest.mark.asyncio
+async def test_middleware_runs_without_error():
+    from open_deep_research.api.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_body_size_middleware_rejects_large_payload():
+    from open_deep_research.api.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        large_body = {"query": "x" * 2_000_000}
+        response = await client.post("/research", json=large_body)
+    assert response.status_code in (413, 422)
+
+
+@pytest.mark.asyncio
 async def test_export_markdown_and_html():
     from open_deep_research.api.deps import get_repo
     from open_deep_research.api.main import app
