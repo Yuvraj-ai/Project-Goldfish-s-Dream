@@ -1,0 +1,58 @@
+{
+  "task": "3-6 Human Evaluation",
+  "status": "COMPLETE",
+  "date": "2026-06-29",
+  "rater": "Single rater (project lead)",
+  "reports": 20,
+  "dimension_weights": {
+    "completeness": 0.30,
+    "citation_accuracy": 0.25,
+    "source_diversity": 0.15,
+    "structure": 0.15,
+    "temporal_relevance": 0.15
+  },
+  "batch_average_weighted": 5.92,
+  "dimension_averages": {
+    "completeness": 5.75,
+    "citation_accuracy": 4.15,
+    "source_diversity": 6.55,
+    "structure": 7.0,
+    "temporal_relevance": 7.5
+  },
+  "best_reports": [
+    {"id": "news_001", "weighted_score": 7.1, "topic": "AI regulation EU/US 2026"},
+    {"id": "news_004", "weighted_score": 7.1, "topic": "Semiconductor supply chain 2026"}
+  ],
+  "worst_reports": [
+    {"id": "tech_002", "weighted_score": 4.2, "topic": "Rate limiting in Python async"},
+    {"id": "fact_001", "weighted_score": 4.4, "topic": "Python 3.12 removed GIL?"},
+    {"id": "comp_002", "weighted_score": 4.6, "topic": "PostgreSQL vs MongoDB"}
+  ],
+  "cross_cutting_findings": [
+    "Inline citations use internal system IDs (supervisor_main_X) — readers cannot map claims to sources. Caps citation-accuracy scores across all reports.",
+    "Academic reports (plus fact_001/fact_003) have duplicated References sections: one fabricated bibliography (fake authors/journals, invented DOIs) plus a second list of real URLs. Comparison/news/tech reports mostly have a single clean list.",
+    "Temporal relevance is the strongest dimension (7.5 avg) — sources are heavily 2026-dated.",
+    "Profile/scope mismatches: fact-check queries rendered with competitive-landscape profiles (Market Overview/Key Players/TAM) instead of verification framing."
+  ],
+  "notable_defects": [
+    "fact_001: Factually wrong — validates false premise that 'Python 3.12 made GIL optional'. Free-threading shipped in 3.13, not 3.12.",
+    "tech_002: ~15 references about physical building windows/doors (keyword collision on 'fixed/sliding window'). Irrelevant sources.",
+    "news_002: Literal '(source required)' placeholders throughout Market Overview — unfinished report shipped as final.",
+    "comp_002: MongoDB nearly absent from a PostgreSQL-vs-MongoDB comparison.",
+    "news_003: Only Google covered for 'major tech companies' — Microsoft/Amazon/Apple/Meta absent."
+  ],
+  "recommendations": [
+    "Fix citation rendering: replace internal supervisor_main_X IDs with cleaned source URLs or sequential [1..N] references.",
+    "Add bibliography filter to detect and suppress fabricated references in academic profiles.",
+    "Fix profile selection: fact-check/validation queries should not use competitive-landscape profiles.",
+    "Fix fact_001's core verdict: Python 3.12 did NOT remove the GIL (free-threading arrived in 3.13).",
+    "Improve source relevance filtering to prevent keyword-collision contamination (tech_002 windows/doors).",
+    "Add post-generation completeness check to catch (source required) placeholders before export."
+  ],
+  "baseline_comparison": {
+    "prior_baseline": 6.5,
+    "current_score": 5.92,
+    "delta": -0.58,
+    "note": "Baseline was set with gpt-4.1; current run uses gpt-4o-mini via OpenRouter. Expected degradation. Actual quality is higher than raw score suggests — citation rendering defect artificially depresses scores."
+  }
+}

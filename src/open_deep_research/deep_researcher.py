@@ -396,6 +396,9 @@ async def generate_research_plan(state: AgentState, config: RunnableConfig) -> C
                         elif isinstance(sources, str):
                             flat.setdefault(provider, []).append(sources)
                 return flat
+            # Coerce string values to single-element lists
+            if v and all(isinstance(val, str) for val in v.values()):
+                return {k: [v] for k, v in v.items()}
             return v
 
     planner_model_config = {
@@ -639,12 +642,16 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> Co
             if raw_notes_concat:
                 update_payload["raw_notes"] = [raw_notes_concat]
             
-            # Collect sources from all research results
+            # Collect sources and evidence cards from all research results
             all_sources = []
+            all_evidence = []
             for observation in tool_results:
                 all_sources.extend(observation.get("sources", []))
+                all_evidence.extend(observation.get("evidence_cards", []))
             if all_sources:
                 update_payload["sources"] = all_sources
+            if all_evidence:
+                update_payload["evidence_cards"] = all_evidence
                 
         except Exception as e:
             # Handle research execution errors with specific types
