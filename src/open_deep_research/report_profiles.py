@@ -170,6 +170,21 @@ def _register_profiles():
         include_table_of_contents=False,
     )
 
+    BUILTIN_PROFILES["fact_check"] = ReportProfile(
+        name="fact_check",
+        description="Fact-checking report with claim verification and evidence assessment",
+        required_sections=[
+            SectionDefinition("Claim", "The assertion being evaluated"),
+            SectionDefinition("Evidence For", "Sources supporting the claim"),
+            SectionDefinition("Evidence Against", "Sources contradicting the claim"),
+            SectionDefinition("Analysis", "Weighing evidence quality and source credibility"),
+            SectionDefinition("Verdict", "Clear determination with confidence level"),
+        ],
+        citation_style="vanilla",
+        tone="formal",
+        max_length=8000,
+    )
+
 
 _register_profiles()
 
@@ -193,6 +208,6 @@ MODE_TO_PROFILE = {
     "technical_implementation": "technical_design_research",
     "news_or_current_events": "news_brief",
     "policy_legal_regulatory": "policy_memo",
-    "validation_or_fact_check": "deep_research_report",
+    "validation_or_fact_check": "fact_check",
     "custom": "deep_research_report",
 }

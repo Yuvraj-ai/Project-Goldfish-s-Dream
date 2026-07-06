@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import traceback
 from datetime import datetime, timezone
 from typing import List, Literal
@@ -53,6 +54,7 @@ from open_deep_research.prompts import (
 )
 from open_deep_research.report_profiles import MODE_TO_PROFILE, get_profile
 from open_deep_research.reviewers import (
+    CompletenessReviewer,
     ContradictionReviewer,
     CoverageReviewer,
     EvidenceReviewer,
@@ -891,6 +893,9 @@ async def extract_structured_evidence(state: ResearcherState, config: RunnableCo
                         "content": match.group("content").strip()[:2000],
                     })
 
+    research_topic = state.get("research_topic", "")
+    raw_results = [r for r in raw_results if score_source_relevance(research_topic, r) >= 0.2]
+
     if not raw_results:
         return {}
 
@@ -1107,19 +1112,155 @@ def _map_section_to_subquestion(section: dict, subquestions: list) -> str:
     return best_sq if best_score >= 1 else ""
 
 
-def _format_evidence_cards(cards: list) -> str:
-    """Format evidence cards for section writer prompt."""
+def _format_evidence_cards(cards: list, citation_index: dict | None = None) -> str:
+    """Format evidence cards for section writer prompt.
+
+    When citation_index is provided, uses sequential [N] identifiers
+    instead of raw internal IDs.
+    """
     if not cards:
         return "No specific evidence cards allocated."
     lines = []
     for card in cards:
+        card_id = card.get("id", "unknown")
+        if citation_index and card_id in citation_index:
+            ref = f"[{citation_index[card_id]['number']}]"
+        else:
+            ref = f"[{card_id}]"
         lines.append(
-            f"- [{card.get('id', 'unknown')}] {card.get('claim', '')} "
+            f"- {ref} {card.get('claim', '')} "
             f"(confidence: {card.get('confidence', 0):.2f})"
         )
         for excerpt in card.get("exact_excerpts", [])[:2]:
             lines.append(f"  Excerpt: {excerpt[:200]}")
     return "\n".join(lines)
+
+
+def score_source_relevance(query: str, source: dict) -> float:
+    query_words = {w.lower() for w in query.split() if len(w) > 3}
+    if not query_words:
+        return 1.0
+    title = source.get("title", "")
+    content = source.get("content", "")[:500]
+    source_text = (title + " " + content).lower()
+    source_words = {w.lower() for w in source_text.split() if len(w) > 3}
+    if not source_words:
+        return 0.0
+    return len(query_words & source_words) / len(query_words)
+
+
+def _remove_placeholder_sentences(text: str) -> str:
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    filtered = [s for s in sentences if not PLACEHOLDER_PATTERNS.search(s)]
+    return " ".join(filtered)
+
+
+def _replace_raw_ids_in_text(text: str, citation_index: dict) -> str:
+    """Replace any remaining raw evidence card IDs with sequential [N] refs.
+
+    Matches bracket-wrapped IDs like [researcher_1_0] or [functions.supervisor_1_0]
+    that appear in citation_index, and replaces them with [N].
+    Does not touch already-correct [N] references.
+    """
+    for match in re.finditer(r'\[([^\]]+)\]', text):
+        potential_id = match.group(1)
+        if potential_id in citation_index:
+            text = text.replace(
+                f"[{potential_id}]",
+                f"[{citation_index[potential_id]['number']}]",
+            )
+    return text
+
+
+def _format_bibliography_from_index(citation_index: dict) -> str:
+    """Format a numbered bibliography from citation_index ordering.
+
+    Each citation_index entry should have 'number', 'title', and 'url' keys.
+    Entries without a 'number' key are skipped.
+    """
+    sorted_entries = sorted(
+        (e for e in citation_index.values() if "number" in e),
+        key=lambda e: e["number"],
+    )
+    lines = []
+    for entry in sorted_entries:
+        title = entry.get("title", "Untitled")
+        url = entry.get("url", "")
+        lines.append(f"[{entry['number']}] {title}. {url}")
+    return "\n".join(lines)
+
+
+def _build_citation_index(
+    evidence_allocation: dict,
+    evidence_cards: list,
+    sources: list,
+) -> dict:
+    """Build sequential citation index from allocated evidence cards.
+
+    Maps each card ID to a sequential number and its source metadata.
+    Ensures each card appears once even if allocated to multiple buckets.
+    """
+    seen = set()
+    ordered_ids = []
+    for bucket in evidence_allocation.values():
+        for cid in bucket:
+            if cid not in seen:
+                seen.add(cid)
+                ordered_ids.append(cid)
+
+    source_by_url = {s.get("url", ""): s for s in sources}
+    card_by_id = {c.get("id", ""): c for c in evidence_cards}
+
+    citation_index = {}
+    for idx, card_id in enumerate(ordered_ids, 1):
+        card = card_by_id.get(card_id)
+        if not card:
+            continue
+        source_urls = card.get("supporting_source_ids", [])
+        source = source_by_url.get(source_urls[0]) if source_urls else None
+        citation_index[card_id] = {
+            "number": idx,
+            "title": source.get("title", "Untitled") if source else "Untitled",
+            "url": source_urls[0] if source_urls else "",
+        }
+    return citation_index
+
+
+def _build_section_prompt(
+    section: dict,
+    profile,
+    evidence_cards: list,
+    research_topic: str,
+    citation_index: dict | None = None,
+) -> str:
+    """Build the section writer prompt with optional premise cross-check.
+
+    For fact_check profiles, injects the actual research topic and a
+    premise cross-check instruction that the model can act on.
+    When citation_index is provided, uses [N] identifiers for evidence refs.
+    """
+    card_text = _format_evidence_cards(evidence_cards, citation_index)
+    prompt = (
+        f'Write the "{section["title"]}" section of a {profile.tone} research report.\n\n'
+        f'Section description: {section["description"]}\n\n'
+        f"Evidence cards to incorporate:\n{card_text}\n\n"
+        f"Tone: {profile.tone}\n\n"
+        "CRITICAL INSTRUCTION ON CONFLICTS:\n"
+        "When sources disagree, present the disagreement explicitly rather than synthesizing "
+        "a false consensus. Never average contradictory claims into a middle position.\n\n"
+        "CRITICAL INSTRUCTION ON CITATIONS:\n"
+        "Reference evidence cards by their [N] identifier. Do not generate new citations or "
+        "a References section — the system handles bibliography formatting.\n\n"
+    )
+    if profile.name == "fact_check":
+        prompt += (
+            f"You are evaluating the following claim: {research_topic}\n\n"
+            "CRITICAL: Before writing, determine if this claim's premise is true or false. "
+            "If evidence cards contradict the premise, prioritize the evidence and "
+            "explicitly state the contradiction. Never validate a false premise.\n\n"
+        )
+    prompt += "Write a well-structured section with inline citations using [N] identifiers."
+    return prompt
 
 
 def _resolve_profile_name(state: AgentState, config: Configuration) -> str:
@@ -1148,12 +1289,15 @@ async def generate_report_outline(state: AgentState, config: RunnableConfig) -> 
     subquestions = state.get("research_plan", {}).get("subquestions", [])
     evidence_cards = state.get("evidence_cards", [])
     evidence_allocation = _allocate_evidence(subquestions, evidence_cards)
+    sources = state.get("sources", [])
+    citation_index = _build_citation_index(evidence_allocation, evidence_cards, sources)
     return {
         "report_outline": {
             "profile": profile_name,
             "sections": outline,
             "evidence_allocation": evidence_allocation,
             "subquestions": subquestions,
+            "citation_index": citation_index,
         }
     }
 
@@ -1175,7 +1319,9 @@ class SectionOutput(BaseModel):
 
 
 async def write_section(
-    section: dict, evidence_cards: list, profile, subquestions: list, config: RunnableConfig
+    section: dict, evidence_cards: list, profile, subquestions: list,
+    research_topic: str, config: RunnableConfig,
+    citation_index: dict | None = None,
 ) -> dict:
     """Write a single report section with evidence and citations using structured output."""
     configurable = Configuration.from_runnable_config(config)
@@ -1201,16 +1347,7 @@ async def write_section(
     if not card_ids:
         card_ids = evidence_allocation.get("main", [])
     relevant_cards = [c for c in evidence_cards if c.get("id") in card_ids]
-    section_prompt = (
-        f'Write the "{section["title"]}" section of a {profile.tone} research report.\n\n'
-        f'Section description: {section["description"]}\n\n'
-        f"Evidence cards to incorporate:\n{_format_evidence_cards(relevant_cards)}\n\n"
-        f"Citation style: {profile.citation_style}\nTone: {profile.tone}\n\n"
-        "CRITICAL INSTRUCTION ON CONFLICTS:\n"
-        "When sources disagree, present the disagreement explicitly rather than synthesizing "
-        "a false consensus. Never average contradictory claims into a middle position.\n\n"
-        "Write a well-structured section with inline citations."
-    )
+    section_prompt = _build_section_prompt(section, profile, relevant_cards, research_topic, citation_index)
     writer_model = (
         configurable_model.with_structured_output(SectionOutput, method="function_calling")
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
@@ -1243,7 +1380,13 @@ async def write_sections_parallel(state: AgentState, config: RunnableConfig) -> 
     for section in sections:
         section["evidence_allocation"] = evidence_allocation
 
-    tasks = [write_section(section, evidence_cards, profile, subquestions, config) for section in sections]
+    research_topic = state.get("research_brief", "")
+    citation_index = outline.get("citation_index")
+    tasks = [
+        write_section(section, evidence_cards, profile, subquestions,
+                      research_topic, config, citation_index)
+        for section in sections
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     written_sections = []
     for result in results:
@@ -1254,6 +1397,14 @@ async def write_sections_parallel(state: AgentState, config: RunnableConfig) -> 
     return {"written_sections": written_sections}
 
 
+_ET_AL_RE = re.compile(r'\([A-Za-z]+ et al\., \d{4}\)')
+PLACEHOLDER_PATTERNS = re.compile(
+    r"\(source required\)|\[citation needed\]|\[insert source\]|"
+    r"\(TODO\)|\[TODO\]|<TODO>|\(insert .+?\)",
+    re.IGNORECASE,
+)
+
+
 async def compile_report(state: AgentState, config: RunnableConfig) -> dict:
     """Compile written sections into final report with TOC and bibliography."""
     await _emit_progress(config, "phase_start", "compile_report", "Compiling final report...")
@@ -1262,9 +1413,15 @@ async def compile_report(state: AgentState, config: RunnableConfig) -> dict:
     sources = state.get("sources", [])
     profile_name = outline.get("profile", "deep_research_report")
     profile = get_profile(profile_name) or get_profile("deep_research_report")
-    from open_deep_research.citation import CitationFormatter
-    formatter = CitationFormatter(profile.citation_style)
-    bibliography = formatter.format_bibliography(sources)
+    citation_index = outline.get("citation_index")
+
+    if citation_index:
+        bibliography = _format_bibliography_from_index(citation_index)
+    else:
+        from open_deep_research.citation import CitationFormatter
+        formatter = CitationFormatter(profile.citation_style)
+        bibliography = formatter.format_bibliography(sources)
+
     toc_lines = []
     for i, section in enumerate(written_sections, 1):
         title = section.get("section_title", f"Section {i}")
@@ -1275,6 +1432,10 @@ async def compile_report(state: AgentState, config: RunnableConfig) -> dict:
     for section in written_sections:
         title = section.get("section_title", "")
         content = section.get("content", "")
+        content = _ET_AL_RE.sub("", content)
+        if citation_index:
+            content = _replace_raw_ids_in_text(content, citation_index)
+        content = _remove_placeholder_sentences(content)
         report_parts.append(f"## {title}\n\n{content}\n")
     report_parts.append(f"## References\n\n{bibliography}\n")
     final_report = "\n".join(report_parts)
@@ -1343,16 +1504,18 @@ async def final_review(state: AgentState, config: RunnableConfig) -> dict:
     evidence_reviewer = EvidenceReviewer()
     contradiction_reviewer = ContradictionReviewer()
     style_reviewer = StyleReviewer()
+    completeness_reviewer = CompletenessReviewer()
 
     review_tasks = [
         coverage_reviewer.review(final_report, research_plan),
         evidence_reviewer.review(final_report, evidence_cards, citation_checks),
         contradiction_reviewer.review(final_report),
         style_reviewer.review(final_report, profile),
+        completeness_reviewer.review(final_report),
     ]
     review_results = await asyncio.gather(*review_tasks, return_exceptions=True)
 
-    coverage_feedback, evidence_feedback, contradiction_feedback, style_feedback = (
+    coverage_feedback, evidence_feedback, contradiction_feedback, style_feedback, completeness_feedback = (
         r if not isinstance(r, Exception) else None for r in review_results
     )
     if coverage_feedback is None:
@@ -1363,8 +1526,10 @@ async def final_review(state: AgentState, config: RunnableConfig) -> dict:
         contradiction_feedback = type("ReviewFeedback", (), {"score": 0.0, "issues": [], "rewrite_instructions": [], "reviewer_name": "contradiction"})()
     if style_feedback is None:
         style_feedback = type("ReviewFeedback", (), {"score": 0.0, "issues": [], "rewrite_instructions": [], "reviewer_name": "style"})()
+    if completeness_feedback is None:
+        completeness_feedback = type("ReviewFeedback", (), {"score": 0.0, "issues": [], "rewrite_instructions": [], "reviewer_name": "completeness"})()
 
-    all_feedback = [f for f in [coverage_feedback, evidence_feedback, contradiction_feedback, style_feedback] if f.score is not None]
+    all_feedback = [f for f in [coverage_feedback, evidence_feedback, contradiction_feedback, style_feedback, completeness_feedback] if f.score is not None]
     avg_score = sum(f.score for f in all_feedback) / len(all_feedback)
 
     review_result = {
@@ -1372,6 +1537,7 @@ async def final_review(state: AgentState, config: RunnableConfig) -> dict:
         "evidence_score": evidence_feedback.score,
         "style_score": style_feedback.score,
         "contradiction_flags": contradiction_feedback.issues,
+        "completeness_score": completeness_feedback.score,
         "iteration_count": iteration,
         "feedback": "; ".join(f"{f.reviewer_name}: {f.score:.2f}" for f in all_feedback),
     }
@@ -1417,7 +1583,13 @@ async def rewrite_sections(state: AgentState, config: RunnableConfig) -> dict:
         section["rewrite_feedback"] = feedback_text
         section["evidence_allocation"] = outline.get("evidence_allocation", {})
 
-    tasks = [write_section(section, evidence_cards, profile, subquestions, config) for section in sections]
+    research_topic = state.get("research_brief", "")
+    citation_index = outline.get("citation_index")
+    tasks = [
+        write_section(section, evidence_cards, profile, subquestions,
+                      research_topic, config, citation_index)
+        for section in sections
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     written_sections = []
     for result in results:

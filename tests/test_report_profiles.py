@@ -10,9 +10,9 @@ from open_deep_research.report_profiles import (
 
 
 def test_all_builtin_profiles_registered():
-    """Test that all 8 profiles are registered."""
+    """Test that all 9 profiles are registered."""
     profiles = list_profiles()
-    assert len(profiles) == 8
+    assert len(profiles) == 9
     assert "executive_brief" in profiles
     assert "deep_research_report" in profiles
     assert "academic_literature_review" in profiles
@@ -21,6 +21,7 @@ def test_all_builtin_profiles_registered():
     assert "technical_design_research" in profiles
     assert "policy_memo" in profiles
     assert "news_brief" in profiles
+    assert "fact_check" in profiles
 
 
 def test_get_profile_returns_correct_profile():
@@ -77,3 +78,30 @@ def test_deep_research_report_has_appendix():
     profile = get_profile("deep_research_report")
     assert profile.include_appendix is True
     assert profile.include_source_quality_notes is True
+
+
+# ── fact_check profile tests ──
+
+def test_fact_check_profile_structure():
+    """Test that fact_check profile has verification-specific sections."""
+    profile = get_profile("fact_check")
+    assert profile is not None
+    assert profile.name == "fact_check"
+    assert profile.citation_style == "vanilla"
+    section_names = [s.name for s in profile.required_sections]
+    assert "Claim" in section_names
+    assert "Evidence For" in section_names
+    assert "Evidence Against" in section_names
+    assert "Analysis" in section_names
+    assert "Verdict" in section_names
+
+
+def test_fact_check_profile_has_vanilla_citation():
+    """Test that fact_check doesn't use APA (avoids hallucinations)."""
+    profile = get_profile("fact_check")
+    assert profile.citation_style == "vanilla"
+
+
+def test_validation_mode_maps_to_fact_check():
+    """Test MODE_TO_PROFILE maps validation to fact_check."""
+    assert MODE_TO_PROFILE["validation_or_fact_check"] == "fact_check"

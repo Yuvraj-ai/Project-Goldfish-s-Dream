@@ -129,3 +129,31 @@ class StyleReviewer:
             issues=issues,
             rewrite_instructions=["Adjust tone and length to match profile"],
         )
+
+
+class CompletenessReviewer:
+    """Check report for placeholder text and incomplete sections."""
+
+    PLACEHOLDER_PATTERNS = re.compile(
+        r"\(source required\)|\[citation needed\]|\[insert source\]|"
+        r"\(TODO\)|\[TODO\]|<TODO>|\(insert .+?\)",
+        re.IGNORECASE,
+    )
+
+    async def review(self, report: str) -> ReviewFeedback:
+        matches = []
+        for match in self.PLACEHOLDER_PATTERNS.finditer(report):
+            matches.append(match.group())
+        score = max(0.0, 1.0 - (len(matches) * 0.3))
+        issues = [f"Placeholder found: {m}" for m in matches[:10]]
+        rewrite_instructions = (
+            ["Replace all placeholder text with actual content before finalizing"]
+            if matches
+            else []
+        )
+        return ReviewFeedback(
+            reviewer_name="CompletenessReviewer",
+            score=score,
+            issues=issues,
+            rewrite_instructions=rewrite_instructions,
+        )
