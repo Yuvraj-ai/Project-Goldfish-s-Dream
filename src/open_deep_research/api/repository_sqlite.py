@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -9,6 +10,8 @@ import aiosqlite
 from open_deep_research.api.models import ProgressEvent, RunRecord, WebhookConfig
 from open_deep_research.api.repository import ResearchRepository
 
+logger = logging.getLogger(__name__)
+
 
 class SqliteResearchRepository(ResearchRepository):
     def __init__(self, db: aiosqlite.Connection) -> None:
@@ -16,15 +19,22 @@ class SqliteResearchRepository(ResearchRepository):
 
     @classmethod
     async def create(cls, db_path: str) -> SqliteResearchRepository:
-        db = await aiosqlite.connect(db_path)
-        db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA journal_mode=WAL")
-        await db.execute("PRAGMA busy_timeout=5000")
-        await db.executescript(_SCHEMA)
-        await db.commit()
+        logger.info("Connecting to SQLite database at %s", db_path)
+        try:
+            db = await aiosqlite.connect(db_path)
+            db.row_factory = aiosqlite.Row
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA busy_timeout=5000")
+            await db.executescript(_SCHEMA)
+            await db.commit()
+        except Exception:
+            logger.critical("Failed to connect/migrate SQLite database at %s", db_path)
+            raise
+        logger.info("SQLite database ready at %s (schema migrated)", db_path)
         return cls(db)
 
     async def close(self) -> None:
+        logger.info("Closing SQLite database connection")
         await self.db.close()
 
     async def create_run(
@@ -38,6 +48,10 @@ class SqliteResearchRepository(ResearchRepository):
             )
             existing = await row.fetchone()
             if existing:
+                logger.info(
+                    "create_run: reusing existing run %s for idempotency_key",
+                    existing["id"],
+                )
                 return existing["id"]
 
         run_id = uuid.uuid4().hex[:12]
@@ -48,6 +62,7 @@ class SqliteResearchRepository(ResearchRepository):
             (run_id, query, json.dumps(config), idempotency_key, "pending", now),
         )
         await self.db.commit()
+        logger.info("create_run: inserted run %s (status=pending)", run_id)
         return run_id
 
     async def get_run(self, run_id: str) -> RunRecord | None:
@@ -56,7 +71,9 @@ class SqliteResearchRepository(ResearchRepository):
         )
         row_data = await row.fetchone()
         if row_data is None:
+            logger.warning("get_run: run %s not found", run_id)
             return None
+        logger.debug("get_run: fetched run %s (status=%s)", run_id, row_data["status"])
         return RunRecord(
             id=row_data["id"],
             query=row_data["query"],
@@ -83,6 +100,7 @@ class SqliteResearchRepository(ResearchRepository):
                 (status, error, run_id),
             )
         await self.db.commit()
+        logger.debug("update_run_status: run %s -> status=%s", run_id, status)
 
     async def append_progress(
         self, run_id: str, event: ProgressEvent,
@@ -95,6 +113,10 @@ class SqliteResearchRepository(ResearchRepository):
              event.timestamp),
         )
         await self.db.commit()
+        logger.debug(
+            "append_progress: run %s seq=%d event_type=%s",
+            run_id, event.seq, event.event_type,
+        )
 
     async def progress_after(
         self, run_id: str, seq: int,
@@ -113,6 +135,10 @@ class SqliteResearchRepository(ResearchRepository):
                 metadata=json.loads(row["metadata"]) if row["metadata"] else None,
                 timestamp=row["timestamp"],
             ))
+        logger.debug(
+            "progress_after: run %s seq>%d returned %d event(s)",
+            run_id, seq, len(results),
+        )
         return results
 
     async def next_seq(self, run_id: str) -> int:
@@ -130,13 +156,19 @@ class SqliteResearchRepository(ResearchRepository):
             (run_id, state, now),
         )
         await self.db.commit()
+        logger.debug("save_checkpoint: run %s (%d bytes)", run_id, len(state))
 
     async def load_checkpoint(self, run_id: str) -> bytes | None:
         row = await self.db.execute(
             "SELECT state FROM checkpoints WHERE run_id = ?", (run_id,),
         )
         result = await row.fetchone()
-        return bytes(result["state"]) if result else None
+        if result is None:
+            logger.debug("load_checkpoint: no checkpoint for run %s", run_id)
+            return None
+        state = bytes(result["state"])
+        logger.debug("load_checkpoint: run %s (%d bytes)", run_id, len(state))
+        return state
 
     async def save_report(self, run_id: str, report: dict) -> None:
         now = datetime.now(timezone.utc).isoformat()
@@ -145,13 +177,18 @@ class SqliteResearchRepository(ResearchRepository):
             (run_id, json.dumps(report), now),
         )
         await self.db.commit()
+        logger.info("save_report: stored report for run %s", run_id)
 
     async def get_report(self, run_id: str) -> dict | None:
         row = await self.db.execute(
             "SELECT data FROM reports WHERE run_id = ?", (run_id,),
         )
         result = await row.fetchone()
-        return json.loads(result["data"]) if result else None
+        if result is None:
+            logger.warning("get_report: no report for run %s", run_id)
+            return None
+        logger.debug("get_report: fetched report for run %s", run_id)
+        return json.loads(result["data"])
 
     async def save_memory(
         self, namespace: str, key: str, data: dict,
@@ -162,6 +199,7 @@ class SqliteResearchRepository(ResearchRepository):
             (namespace, key, json.dumps(data), now),
         )
         await self.db.commit()
+        logger.debug("save_memory: namespace=%s key=%s", namespace, key)
 
     async def load_memory(
         self, namespace: str, key: str,
@@ -171,14 +209,20 @@ class SqliteResearchRepository(ResearchRepository):
             (namespace, key),
         )
         result = await row.fetchone()
-        return json.loads(result["data"]) if result else None
+        if result is None:
+            logger.debug("load_memory: miss namespace=%s key=%s", namespace, key)
+            return None
+        logger.debug("load_memory: hit namespace=%s key=%s", namespace, key)
+        return json.loads(result["data"])
 
     async def list_memory_keys(self, namespace: str) -> list[str]:
         async with self.db.execute(
             "SELECT key FROM memory WHERE namespace = ?", (namespace,)
         ) as cursor:
             rows = await cursor.fetchall()
-        return [row["key"] for row in rows]
+        keys = [row["key"] for row in rows]
+        logger.debug("list_memory_keys: namespace=%s returned %d key(s)", namespace, len(keys))
+        return keys
 
     async def list_webhooks(self) -> list[WebhookConfig]:
         rows = await self.db.execute("SELECT * FROM webhook_configs")
@@ -193,6 +237,7 @@ class SqliteResearchRepository(ResearchRepository):
                 timeout_seconds=row["timeout_seconds"],
                 retry_max=row["retry_max"],
             ))
+        logger.debug("list_webhooks: returned %d config(s)", len(results))
         return results
 
     async def save_webhook(self, config: WebhookConfig) -> None:
@@ -205,12 +250,14 @@ class SqliteResearchRepository(ResearchRepository):
              config.timeout_seconds, config.retry_max),
         )
         await self.db.commit()
+        logger.info("save_webhook: stored webhook %s (url=%s)", config.id, config.url)
 
     async def delete_webhook(self, webhook_id: str) -> None:
         await self.db.execute(
             "DELETE FROM webhook_configs WHERE id = ?", (webhook_id,),
         )
         await self.db.commit()
+        logger.info("delete_webhook: removed webhook %s", webhook_id)
 
 
 _SCHEMA = """

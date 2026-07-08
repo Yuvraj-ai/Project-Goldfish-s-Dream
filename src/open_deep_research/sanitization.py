@@ -1,9 +1,12 @@
 """Input sanitization and prompt injection defense."""
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Dict, List
+
+logger = logging.getLogger(__name__)
 
 INJECTION_PATTERNS = [
     r"ignore\s+(all\s+)?previous\s+instructions",
@@ -79,8 +82,17 @@ class ContentSanitizer:
             (idx, re.compile(pattern, re.IGNORECASE | re.DOTALL))
             for idx, pattern in enumerate(INJECTION_PATTERNS)
         ]
+        logger.info(
+            "ContentSanitizer initialized with %d injection patterns",
+            len(self._compiled_patterns),
+        )
 
     def sanitize(self, raw_text: str, source_type: str = "web", source_url: str = "") -> SanitizationResult:
+        preview = raw_text[:60].replace("\n", " ")
+        logger.debug(
+            "sanitize() scanning content (source_type=%s, length=%d, preview=%r)",
+            source_type, len(raw_text), preview,
+        )
         patterns_matched = []
         is_safe = True
 
@@ -88,10 +100,31 @@ class ContentSanitizer:
             if pattern.search(raw_text):
                 patterns_matched.append(f"pattern_{idx}")
                 is_safe = False
+                logger.debug(
+                    "Injection pattern matched: category=pattern_%d (source_type=%s)",
+                    idx, source_type,
+                )
 
         if self._has_repetition_attack(raw_text):
             patterns_matched.append("repetition_attack")
             is_safe = False
+            logger.debug(
+                "Injection pattern matched: category=repetition_attack (source_type=%s)",
+                source_type,
+            )
+
+        if not is_safe:
+            logger.warning(
+                "Injection DETECTED and neutralized: %d pattern(s) matched %s "
+                "(source_type=%s, source_url=%s, preview=%r)",
+                len(patterns_matched), patterns_matched, source_type,
+                source_url or "<none>", preview,
+            )
+        else:
+            logger.debug(
+                "Sanitization pass clean: no injection detected (source_type=%s, length=%d)",
+                source_type, len(raw_text),
+            )
 
         sanitized = self._wrap_in_isolation(raw_text, source_type, source_url)
 
@@ -119,7 +152,8 @@ class ContentSanitizer:
         return False
 
     def batch_sanitize(self, items: List[Dict]) -> List[SanitizationResult]:
-        return [
+        logger.info("batch_sanitize() processing %d items", len(items))
+        results = [
             self.sanitize(
                 raw_text=item["text"],
                 source_type=item.get("source_type", "web"),
@@ -127,3 +161,14 @@ class ContentSanitizer:
             )
             for item in items
         ]
+        detected = sum(1 for r in results if r.injection_detected)
+        if detected:
+            logger.warning(
+                "batch_sanitize() complete: %d/%d items had injection detected",
+                detected, len(results),
+            )
+        else:
+            logger.info(
+                "batch_sanitize() complete: all %d items passed clean", len(results)
+            )
+        return results

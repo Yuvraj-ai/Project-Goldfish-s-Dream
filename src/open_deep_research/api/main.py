@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -15,8 +13,12 @@ from open_deep_research.api.deps import get_config, init_repo, set_config
 from open_deep_research.api.exceptions import APIError
 from open_deep_research.api.metrics import metrics
 from open_deep_research.api.routes import admin, memory, research
+from open_deep_research.logging_config import request_id_var, setup_logging
 
-request_id_var: ContextVar[str] = ContextVar("request_id")
+# Configure package-wide logging once, at API entry. Deployments can select
+# structured output with LOG_FORMAT=json (keeps the previous JSON + request_id
+# behavior) and verbosity with LOG_LEVEL.
+setup_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -69,27 +71,6 @@ async def add_request_id(request: Request, call_next):
     if response.status_code >= 400:
         metrics.inc("research_errors_total", {"endpoint": request.url.path, "error_type": str(response.status_code)})
     return response
-
-
-class JSONFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        log_entry = {
-            "timestamp": self.formatTime(record),
-            "level": record.levelname,
-            "module": record.module,
-            "message": record.getMessage(),
-        }
-        try:
-            log_entry["request_id"] = request_id_var.get()
-        except LookupError:
-            pass
-        return json.dumps(log_entry)
-
-
-handler = logging.StreamHandler()
-handler.setFormatter(JSONFormatter())
-logging.getLogger("open_deep_research.api").addHandler(handler)
-logging.getLogger("open_deep_research.api").setLevel(logging.INFO)
 
 
 @app.get("/metrics")

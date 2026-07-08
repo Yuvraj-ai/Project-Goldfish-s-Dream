@@ -71,6 +71,8 @@ packages = ["open_deep_research", "legacy", "tests"]
 "*" = ["py.typed"]
 
 [tool.ruff]
+# Vendored third-party code is kept as an upstream snapshot, not linted.
+extend-exclude = ["src/open_deep_research/_vendor"]
 lint.select = [
     "E",    # pycodestyle
     "F",    # pyflakes

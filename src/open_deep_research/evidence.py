@@ -1,12 +1,15 @@
 """Evidence extraction, deduplication, and compression engine."""
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from functools import lru_cache
 from typing import Dict, List, Tuple
 
 from open_deep_research.state import ConflictFlag, EvidenceCard, Source
+
+logger = logging.getLogger(__name__)
 
 
 def compute_source_credibility(source: Source) -> float:
@@ -31,7 +34,12 @@ def compute_source_credibility(source: Source) -> float:
     if source.credibility_score < 0.3:
         score -= 0.2
 
-    return max(0.0, min(1.0, score))
+    final = max(0.0, min(1.0, score))
+    logger.debug(
+        "source_credibility url=%s type=%s -> %.4f",
+        source.url, source.source_type, final
+    )
+    return final
 
 
 def compute_corroboration_strength(
@@ -45,7 +53,12 @@ def compute_corroboration_strength(
         if c.claim != claim and _claims_similar(c.claim, claim, similarity_threshold)
     ])
     # Normalize: 0 sources = 0, 3+ sources = 1.0
-    return min(1.0, supporting_count / 3.0)
+    strength = min(1.0, supporting_count / 3.0)
+    logger.debug(
+        "corroboration claim=%r supporting=%d -> %.4f",
+        claim[:80], supporting_count, strength
+    )
+    return strength
 
 
 def compute_recency_score(
@@ -54,11 +67,15 @@ def compute_recency_score(
 ) -> float:
     """Compute recency score based on source date and research mode."""
     if not source_date:
+        logger.warning("recency_score missing source_date, using neutral 0.5")
         return 0.5  # Unknown date gets neutral score
 
     try:
         pub_date = datetime.strptime(source_date, "%Y-%m-%d")
     except ValueError:
+        logger.warning(
+            "recency_score unparseable date=%r, using neutral 0.5", source_date
+        )
         return 0.5
 
     days_ago = (datetime.now() - pub_date).days
@@ -74,11 +91,20 @@ def compute_recency_score(
     window = windows.get(mode, windows["default"])
 
     if days_ago <= window:
+        logger.debug(
+            "recency_score date=%s mode=%s days_ago=%d window=%d -> 1.0",
+            source_date, mode, days_ago, window
+        )
         return 1.0
     else:
         # Linear decay after window
         decay_days = days_ago - window
-        return max(0.0, 1.0 - (decay_days / (window * 2)))
+        score = max(0.0, 1.0 - (decay_days / (window * 2)))
+        logger.debug(
+            "recency_score date=%s mode=%s days_ago=%d window=%d -> %.4f",
+            source_date, mode, days_ago, window, score
+        )
+        return score
 
 
 def _jaccard_similarity(claim_a: str, claim_b: str) -> float:
@@ -110,6 +136,13 @@ def extract_evidence(
     mode: str = "default"
 ) -> Tuple[List[EvidenceCard], List[Source]]:
     """Extract evidence cards from raw search results."""
+    logger.info(
+        "extract_evidence entry results=%d subquestion_id=%s researcher_id=%s mode=%s",
+        len(raw_results), subquestion_id, researcher_id, mode
+    )
+    if not raw_results:
+        logger.warning("extract_evidence received empty raw_results")
+
     cards = []
     sources = []
 
@@ -140,6 +173,15 @@ def extract_evidence(
                 researcher_id=researcher_id
             )
             cards.append(card)
+            logger.debug(
+                "extracted card id=%s url=%s claim=%r",
+                card.id, source.url, card.claim[:80]
+            )
+        else:
+            logger.warning(
+                "skipped result index=%d url=%s (no content/snippet)",
+                i, source.url
+            )
 
     # Compute confidence scores
     for card in cards:
@@ -164,7 +206,15 @@ def extract_evidence(
             recency * 0.25,
             4
         )
+        logger.debug(
+            "confidence card=%s credibility=%.4f corroboration=%.4f "
+            "recency=%.4f -> %.4f",
+            card.id, source_cred, corroboration, recency, card.confidence
+        )
 
+    logger.info(
+        "extract_evidence complete: %d cards, %d sources", len(cards), len(sources)
+    )
     return cards, sources
 
 
@@ -173,7 +223,12 @@ def deduplicate_claims(
     similarity_threshold: float = 0.7
 ) -> Tuple[List[EvidenceCard], List[str]]:
     """Deduplicate claims using Jaccard similarity (LLM judge in production)."""
+    logger.info(
+        "deduplicate_claims entry cards=%d threshold=%.2f",
+        len(cards), similarity_threshold
+    )
     if not cards:
+        logger.warning("deduplicate_claims received empty cards")
         return [], []
 
     unique_cards = [cards[0]]
@@ -185,10 +240,18 @@ def deduplicate_claims(
             if _claims_similar(card.claim, unique.claim, similarity_threshold):
                 # Merge: keep the one with higher confidence
                 if card.confidence > unique.confidence:
+                    logger.debug(
+                        "dedup merge: replacing %s (conf=%.4f) with %s (conf=%.4f)",
+                        unique.id, unique.confidence, card.id, card.confidence
+                    )
                     duplicate_ids.append(unique.id)
                     unique_cards.remove(unique)
                     unique_cards.append(card)
                 else:
+                    logger.debug(
+                        "dedup merge: dropping %s (conf=%.4f) kept %s (conf=%.4f)",
+                        card.id, card.confidence, unique.id, unique.confidence
+                    )
                     duplicate_ids.append(card.id)
                 is_duplicate = True
                 break
@@ -196,6 +259,10 @@ def deduplicate_claims(
         if not is_duplicate:
             unique_cards.append(card)
 
+    logger.info(
+        "deduplicate_claims complete: %d unique, %d duplicates removed",
+        len(unique_cards), len(duplicate_ids)
+    )
     return unique_cards, duplicate_ids
 
 
@@ -203,11 +270,15 @@ def detect_conflicts(
     cards: List[EvidenceCard]
 ) -> List[ConflictFlag]:
     """Detect conflicting claims between evidence cards."""
+    logger.info("detect_conflicts entry cards=%d", len(cards))
     conflicts = []
 
     for i, card_a in enumerate(cards):
         for card_b in cards[i+1:]:
             if _claims_conflict(card_a.claim, card_b.claim):
+                logger.debug(
+                    "conflict detected between %s and %s", card_a.id, card_b.id
+                )
                 conflicts.append(ConflictFlag(
                     card_a_id=card_a.id,
                     card_b_id=card_b.id,
@@ -215,6 +286,7 @@ def detect_conflicts(
                     severity="medium"
                 ))
 
+    logger.info("detect_conflicts complete: %d conflicts found", len(conflicts))
     return conflicts
 
 
@@ -249,7 +321,9 @@ def compress_evidence(
     cards: List[EvidenceCard]
 ) -> List[EvidenceCard]:
     """Compress evidence by merging cards with similar claims."""
+    logger.info("compress_evidence entry cards=%d", len(cards))
     if not cards:
+        logger.warning("compress_evidence received empty cards")
         return []
 
     # Group by similar claims
@@ -294,6 +368,14 @@ def compress_evidence(
             researcher_id=best_card.researcher_id,
             deduplicated_from=[c.id for c in group if c.id != best_card.id]
         )
+        logger.debug(
+            "compressed group base=%s group_size=%d sources=%d claim=%r",
+            best_card.id, len(group), len(unique_source_ids), claim_key[:80]
+        )
         compressed.append(compressed_card)
 
+    logger.info(
+        "compress_evidence complete: %d cards -> %d compressed",
+        len(cards), len(compressed)
+    )
     return compressed

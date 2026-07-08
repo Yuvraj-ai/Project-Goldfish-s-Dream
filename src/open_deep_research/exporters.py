@@ -1,8 +1,11 @@
 """Multi-format export pipeline — Markdown, HTML, PDF, DOCX, JSON, BibTeX."""
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class BaseExporter(ABC):
@@ -19,8 +22,10 @@ class MarkdownExporter(BaseExporter):
 
     async def export(self, markdown: str, metadata: dict, output_path: Path) -> Path:
         """Export report as markdown file."""
+        logger.info("MarkdownExporter.export start: format=markdown output_path=%s chars=%d", output_path, len(markdown))
         md_path = output_path.with_suffix(".md")
         md_path.write_text(markdown, encoding="utf-8")
+        logger.info("MarkdownExporter.export done: exported report to %s (%d bytes)", md_path, md_path.stat().st_size)
         return md_path
 
 
@@ -29,9 +34,13 @@ class HTMLExporter(BaseExporter):
 
     async def export(self, markdown: str, metadata: dict, output_path: Path) -> Path:
         """Export report as styled HTML file."""
+        logger.info("HTMLExporter.export start: format=html output_path=%s chars=%d", output_path, len(markdown))
+        if not markdown.strip():
+            logger.warning("HTMLExporter: markdown content is empty for %s", output_path)
         import markdown as md_lib
 
         html_content = md_lib.markdown(markdown, extensions=["tables", "fenced_code", "toc"])
+        logger.debug("HTMLExporter: rendered html_content chars=%d", len(html_content))
 
         styled_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -58,6 +67,7 @@ class HTMLExporter(BaseExporter):
 
         html_path = output_path.with_suffix(".html")
         html_path.write_text(styled_html, encoding="utf-8")
+        logger.info("HTMLExporter.export done: exported report to %s (%d bytes)", html_path, html_path.stat().st_size)
         return html_path
 
 
@@ -66,6 +76,7 @@ class PDFExporter(BaseExporter):
 
     async def export(self, markdown: str, metadata: dict, output_path: Path) -> Path:
         """Export report as PDF via weasyprint."""
+        logger.info("PDFExporter.export start: format=pdf output_path=%s chars=%d", output_path, len(markdown))
         html_exporter = HTMLExporter()
         html_path = await html_exporter.export(markdown, metadata, output_path.with_suffix(".tmp"))
 
@@ -73,9 +84,17 @@ class PDFExporter(BaseExporter):
             from weasyprint import HTML
 
             pdf_path = output_path.with_suffix(".pdf")
+            logger.debug("PDFExporter: rendering PDF from intermediate html %s", html_path)
             HTML(filename=str(html_path)).write_pdf(str(pdf_path))
+            logger.info(
+                "PDFExporter.export done: exported report to %s (%d bytes)", pdf_path, pdf_path.stat().st_size
+            )
             return pdf_path
+        except Exception:
+            logger.exception("PDFExporter.export failed for %s", output_path)
+            raise
         finally:
+            logger.debug("PDFExporter: cleaning up intermediate html %s", html_path)
             html_path.unlink(missing_ok=True)
 
 
@@ -84,6 +103,7 @@ class DOCXExporter(BaseExporter):
 
     async def export(self, markdown: str, metadata: dict, output_path: Path) -> Path:
         """Export report as DOCX via python-docx."""
+        logger.info("DOCXExporter.export start: format=docx output_path=%s chars=%d", output_path, len(markdown))
         from docx import Document
         from docx.enum.text import WD_ALIGN_PARAGRAPH
 
@@ -104,8 +124,10 @@ class DOCXExporter(BaseExporter):
             elif line.strip():
                 doc.add_paragraph(line)
 
+        logger.debug("DOCXExporter: processed %d markdown line(s)", len(lines))
         docx_path = output_path.with_suffix(".docx")
         doc.save(str(docx_path))
+        logger.info("DOCXExporter.export done: exported report to %s (%d bytes)", docx_path, docx_path.stat().st_size)
         return docx_path
 
 
@@ -114,6 +136,7 @@ class JSONExporter(BaseExporter):
 
     async def export(self, markdown: str, metadata: dict, output_path: Path) -> Path:
         """Export report as structured JSON file."""
+        logger.info("JSONExporter.export start: format=json output_path=%s chars=%d", output_path, len(markdown))
         structured = {
             "report": {
                 "markdown": markdown,
@@ -127,6 +150,7 @@ class JSONExporter(BaseExporter):
 
         json_path = output_path.with_suffix(".json")
         json_path.write_text(json.dumps(structured, indent=2), encoding="utf-8")
+        logger.info("JSONExporter.export done: exported report to %s (%d bytes)", json_path, json_path.stat().st_size)
         return json_path
 
 
@@ -135,14 +159,19 @@ class BibTeXExporter(BaseExporter):
 
     async def export(self, markdown: str, metadata: dict, output_path: Path) -> Path:
         """Export bibliography as BibTeX file."""
+        logger.info("BibTeXExporter.export start: format=bibtex output_path=%s", output_path)
         from open_deep_research.citation import CitationFormatter
 
         sources = metadata.get("sources", [])
+        if not sources:
+            logger.warning("BibTeXExporter: no sources in metadata for %s", output_path)
         formatter = CitationFormatter("vanilla")
         bibtex_content = formatter.export_bibtex(sources)
+        logger.debug("BibTeXExporter: formatted %d source(s) into bibtex", len(sources))
 
         bib_path = output_path.with_suffix(".bib")
         bib_path.write_text(bibtex_content, encoding="utf-8")
+        logger.info("BibTeXExporter.export done: exported bibliography to %s (%d bytes)", bib_path, bib_path.stat().st_size)
         return bib_path
 
 
@@ -160,5 +189,7 @@ def get_exporter(format_name: str) -> BaseExporter:
     """Get exporter instance by format name."""
     cls = EXPORTER_MAP.get(format_name)
     if cls is None:
+        logger.warning("get_exporter: unsupported export format requested: %s", format_name)
         raise ValueError(f"Unknown export format: {format_name}")
+    logger.debug("get_exporter: resolved format %s -> %s", format_name, cls.__name__)
     return cls()

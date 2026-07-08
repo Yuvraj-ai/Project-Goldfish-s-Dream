@@ -1,7 +1,10 @@
 """Report profile registry — defines report types with sections, tone, and citation style."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -187,15 +190,22 @@ def _register_profiles():
 
 
 _register_profiles()
+logger.debug("report_profiles: registered %d built-in profile(s)", len(BUILTIN_PROFILES))
 
 
 def get_profile(name: str) -> ReportProfile | None:
     """Get a report profile by name."""
-    return BUILTIN_PROFILES.get(name)
+    profile = BUILTIN_PROFILES.get(name)
+    if profile is None:
+        logger.warning("get_profile: unknown profile requested: %s", name)
+    else:
+        logger.debug("get_profile: resolved profile %s", name)
+    return profile
 
 
 def list_profiles() -> List[str]:
     """List all available profile names."""
+    logger.debug("list_profiles: %d built-in profile(s) available", len(BUILTIN_PROFILES))
     return list(BUILTIN_PROFILES.keys())
 
 

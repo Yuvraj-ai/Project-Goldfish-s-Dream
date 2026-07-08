@@ -28,6 +28,10 @@ class ResearchRunner:
             cls._semaphore = asyncio.Semaphore(max_concurrent)
 
         run_id = await repo.create_run(query, config, idempotency_key)
+        logger.info(
+            "Research run %s created (mode=%s, max_concurrent=%s, query=%.80s)",
+            run_id, config.get("mode"), max_concurrent, query,
+        )
         task = asyncio.create_task(cls._execute(repo, run_id, query, config))
         cls._tasks[run_id] = task
         return run_id
@@ -41,6 +45,11 @@ class ResearchRunner:
         config: dict[str, Any],
     ) -> None:
         async with cls._semaphore:
+            started_at = datetime.now(timezone.utc)
+            logger.info(
+                "Research run %s started (mode=%s, query=%.80s)",
+                run_id, config.get("mode"), query,
+            )
             try:
                 await repo.update_run_status(run_id, "running")
                 seq = await repo.next_seq(run_id)
@@ -63,6 +72,7 @@ class ResearchRunner:
                     }
                 }
 
+                logger.info("Run %s: invoking deep_researcher graph", run_id)
                 final_state: dict[str, Any] = {}
                 async for step_state in deep_researcher.astream(
                     {"messages": [HumanMessage(content=query)], "document_paths": []},
@@ -73,13 +83,24 @@ class ResearchRunner:
 
                 report_content = final_state.get("final_report")
                 if report_content:
+                    logger.info(
+                        "Run %s: graph produced report (%d chars)",
+                        run_id, len(report_content),
+                    )
                     await repo.save_report(run_id, {
                         "markdown": report_content,
                         "format": "markdown",
                         "run_id": run_id,
                     })
+                else:
+                    logger.warning("Run %s: graph produced empty/partial result (no final_report)", run_id)
 
                 await repo.update_run_status(run_id, "completed")
+                duration = (datetime.now(timezone.utc) - started_at).total_seconds()
+                logger.info(
+                    "Research run %s finished (status=completed, duration=%.2fs)",
+                    run_id, duration,
+                )
                 seq = await repo.next_seq(run_id)
                 await repo.append_progress(run_id, ProgressEvent(
                     seq=seq, event_type="run_completed",
@@ -87,6 +108,7 @@ class ResearchRunner:
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 ))
             except asyncio.CancelledError:
+                logger.warning("Research run %s cancelled", run_id)
                 await repo.update_run_status(run_id, "cancelled")
                 seq = await repo.next_seq(run_id)
                 await repo.append_progress(run_id, ProgressEvent(
@@ -95,7 +117,11 @@ class ResearchRunner:
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 ))
             except Exception as e:
-                logger.exception("Run %s failed", run_id)
+                duration = (datetime.now(timezone.utc) - started_at).total_seconds()
+                logger.exception(
+                    "Research run %s finished (status=failed, duration=%.2fs)",
+                    run_id, duration,
+                )
                 await repo.update_run_status(run_id, "failed", error=str(e))
                 seq = await repo.next_seq(run_id)
                 await repo.append_progress(run_id, ProgressEvent(
@@ -111,18 +137,23 @@ class ResearchRunner:
     async def cancel(cls, run_id: str) -> bool:
         task = cls._tasks.get(run_id)
         if task is None:
+            logger.warning("Cancel requested for unknown/inactive run %s", run_id)
             return False
+        logger.info("Cancelling research run %s", run_id)
         task.cancel()
         return True
 
     @classmethod
     def list_active(cls) -> list[str]:
-        return list(cls._tasks.keys())
+        active = list(cls._tasks.keys())
+        logger.debug("Listing active runs: %d active", len(active))
+        return active
 
     @classmethod
     def get_status(cls, run_id: str) -> str | None:
         task = cls._tasks.get(run_id)
         if task is None:
+            logger.debug("Status requested for unknown/inactive run %s", run_id)
             return None
         if task.done():
             if task.cancelled():

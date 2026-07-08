@@ -1,7 +1,10 @@
 """Citation formatting engine — supports 6 academic/professional styles."""
 
+import logging
 from datetime import datetime
 from typing import List, Literal
+
+logger = logging.getLogger(__name__)
 
 
 class CitationEntry:
@@ -33,6 +36,7 @@ class CitationFormatter:
     def __init__(self, style: Literal["vanilla", "apa", "mla", "chicago", "harvard", "ieee"] = "vanilla"):
         """Initialize citation formatter with style."""
         self.style = style
+        logger.debug("CitationFormatter initialized style=%s", style)
 
     def _parse_source(self, source: dict) -> CitationEntry:
         """Parse Source dict into CitationEntry."""
@@ -42,7 +46,14 @@ class CitationFormatter:
             try:
                 year = int(date_str[:4])
             except (ValueError, IndexError):
-                pass
+                logger.warning(
+                    "could not parse year from date=%r url=%s",
+                    date_str, source.get("url", "")
+                )
+        if not source.get("title"):
+            logger.warning(
+                "source missing title url=%s", source.get("url", "")
+            )
         return CitationEntry(
             authors=[],
             title=source.get("title", "Untitled"),
@@ -55,6 +66,7 @@ class CitationFormatter:
 
     def format_inline(self, source: dict) -> str:
         """Format inline citation."""
+        logger.debug("format_inline style=%s url=%s", self.style, source.get("url", ""))
         entry = self._parse_source(source)
         if self.style == "vanilla":
             return f"({entry.publisher or 'Unknown'}, {entry.year or 'n.d.'})"
@@ -73,19 +85,33 @@ class CitationFormatter:
         elif self.style == "ieee":
             return f"[{source.get('_index', '?')}]"
         else:
+            logger.warning(
+                "unknown style=%s, using vanilla fallback for inline", self.style
+            )
             return f"({entry.publisher or 'Unknown'}, {entry.year or 'n.d.'})"
 
     def format_bibliography(self, sources: List[dict]) -> str:
         """Format full bibliography."""
+        logger.info(
+            "format_bibliography entry style=%s sources=%d", self.style, len(sources)
+        )
+        if not sources:
+            logger.warning("format_bibliography received empty sources")
         if self.style == "apa":
             return self._format_apa_bibliography(sources)
         elif self.style == "ieee":
             return self._format_ieee_bibliography(sources)
         else:
+            if self.style not in ("vanilla", "mla", "chicago", "harvard"):
+                logger.warning(
+                    "unknown style=%s, using vanilla bibliography fallback",
+                    self.style
+                )
             return self._format_vanilla_bibliography(sources)
 
     def _format_vanilla_bibliography(self, sources: List[dict]) -> str:
         """Format a simple numbered bibliography."""
+        logger.debug("formatting vanilla bibliography sources=%d", len(sources))
         lines = []
         for i, source in enumerate(sources, 1):
             title = source.get("title", "Untitled")
@@ -97,6 +123,7 @@ class CitationFormatter:
 
     def _format_apa_bibliography(self, sources: List[dict]) -> str:
         """APA-style bibliography."""
+        logger.debug("formatting APA bibliography sources=%d", len(sources))
         lines = []
         for source in sources:
             entry = self._parse_source(source)
@@ -107,6 +134,7 @@ class CitationFormatter:
 
     def _format_ieee_bibliography(self, sources: List[dict]) -> str:
         """IEEE numbered bibliography."""
+        logger.debug("formatting IEEE bibliography sources=%d", len(sources))
         lines = []
         for i, source in enumerate(sources, 1):
             entry = self._parse_source(source)
@@ -115,6 +143,9 @@ class CitationFormatter:
 
     def export_bibtex(self, sources: List[dict]) -> str:
         """Export sources as BibTeX entries."""
+        logger.info("export_bibtex entry sources=%d", len(sources))
+        if not sources:
+            logger.warning("export_bibtex received empty sources")
         entries = []
         for i, source in enumerate(sources, 1):
             entry = self._parse_source(source)
@@ -129,4 +160,5 @@ class CitationFormatter:
                 f"  note = {{Accessed: {datetime.now().strftime('%Y-%m-%d')}}}\n"
                 f"}}"
             )
+        logger.info("export_bibtex complete: %d entries", len(entries))
         return "\n\n".join(entries)

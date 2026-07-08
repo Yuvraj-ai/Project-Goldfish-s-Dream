@@ -62,6 +62,10 @@ async def tavily_search(
     Returns:
         Formatted string containing summarized search results
     """
+    logger.info(
+        "Tavily search starting: %d queries (max_results=%d, topic=%s)",
+        len(queries), max_results, topic,
+    )
     # Step 1: Execute search queries asynchronously
     search_results = await tavily_search_async(
         queries,
@@ -78,7 +82,8 @@ async def tavily_search(
             url = result['url']
             if url not in unique_results:
                 unique_results[url] = {**result, "query": response['query']}
-    
+    logger.debug("Tavily search deduplicated to %d unique URLs", len(unique_results))
+
     # Step 3: Set up the summarization model with configuration
     configurable = Configuration.from_runnable_config(config)
     
@@ -111,6 +116,10 @@ async def tavily_search(
     ]
     
     # Step 5: Execute all summarization tasks in parallel
+    logger.debug(
+        "Summarizing %d webpages with model %s",
+        len(summarization_tasks), configurable.summarization_model,
+    )
     summaries = await asyncio.gather(*summarization_tasks)
     
     # Step 6: Combine results with their summaries
@@ -128,7 +137,9 @@ async def tavily_search(
     
     # Step 7: Format the final output
     if not summarized_results:
+        logger.warning("Tavily search returned no valid results for %d queries", len(queries))
         return "No valid search results found. Please try different search queries or use a different search API."
+    logger.info("Tavily search completed: %d summarized results", len(summarized_results))
     
     formatted_output = "Search results: \n\n"
     for i, (url, result) in enumerate(summarized_results.items()):
@@ -173,6 +184,7 @@ async def tavily_search_async(
     ]
     
     # Execute all search queries in parallel and return results
+    logger.debug("Dispatching %d Tavily API queries (topic=%s)", len(search_tasks), topic)
     search_results = await asyncio.gather(*search_tasks)
     return search_results
 
@@ -209,11 +221,11 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
         
     except asyncio.TimeoutError:
         # Timeout during summarization - return original content
-        logging.warning("Summarization timed out after 60 seconds, returning original content")
+        logger.warning("Summarization timed out after 60 seconds, returning original content")
         return webpage_content
-    except Exception as e:
+    except Exception:
         # Other errors during summarization - log and return original content
-        logging.warning(f"Summarization failed with error: {str(e)}, returning original content")
+        logger.exception("Summarization failed, returning original content")
         return webpage_content
 
 ##########################
@@ -279,19 +291,24 @@ async def get_mcp_access_token(
             token_url = base_mcp_url.rstrip("/") + "/oauth/token"
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
             
+            logger.info("Requesting MCP access token via OAuth token exchange")
             async with session.post(token_url, headers=headers, data=form_data) as response:
                 if response.status == 200:
                     # Successfully obtained token
                     token_data = await response.json()
+                    logger.info("MCP access token obtained successfully")
                     return token_data
                 else:
                     # Log error details for debugging
                     response_text = await response.text()
-                    logging.error(f"Token exchange failed: {response_text}")
-                    
-    except Exception as e:
-        logging.error(f"Error during token exchange: {e}")
-    
+                    logger.error(
+                        "Token exchange failed with status %s: %s",
+                        response.status, response_text,
+                    )
+
+    except Exception:
+        logger.exception("Error during MCP token exchange")
+
     return None
 
 async def get_tokens(config: RunnableConfig):
@@ -327,6 +344,7 @@ async def get_tokens(config: RunnableConfig):
     
     if current_time > expiration_time:
         # Token expired, clean up and return None
+        logger.info("Stored MCP tokens expired; deleting cached tokens")
         await store.adelete((user_id, "tokens"), "data")
         return None
 
@@ -370,16 +388,19 @@ async def fetch_tokens(config: RunnableConfig) -> dict[str, Any]:
     # Extract Supabase token for new token exchange
     supabase_token = config.get("configurable", {}).get("x-supabase-access-token")
     if not supabase_token:
+        logger.debug("No Supabase access token in config; cannot fetch MCP tokens")
         return None
-    
+
     # Extract MCP configuration
     mcp_config = config.get("configurable", {}).get("mcp_config")
     if not mcp_config or not mcp_config.get("url"):
+        logger.debug("No MCP config/url present; cannot fetch MCP tokens")
         return None
-    
+
     # Exchange Supabase token for MCP tokens
     mcp_tokens = await get_mcp_access_token(supabase_token, mcp_config.get("url"))
     if not mcp_tokens:
+        logger.warning("MCP token exchange returned no tokens")
         return None
 
     # Store the new tokens and return them
@@ -421,6 +442,7 @@ def wrap_mcp_authenticate_tool(tool: StructuredTool) -> StructuredTool:
             mcp_error = _find_mcp_error_in_exception_chain(original_error)
             if not mcp_error:
                 # Not an MCP error, re-raise the original exception
+                logger.debug("MCP tool raised non-MCP error; re-raising")
                 raise original_error
             
             # Handle MCP-specific error cases
@@ -430,6 +452,7 @@ def wrap_mcp_authenticate_tool(tool: StructuredTool) -> StructuredTool:
             
             # Check for authentication/interaction required error
             if error_code == -32003:  # Interaction required error code
+                logger.warning("MCP tool requires interaction/authentication (code -32003)")
                 message_payload = error_data.get("message", {})
                 error_message = "Required interaction"
                 
@@ -480,8 +503,9 @@ async def load_mcp_tools(
     )
     
     if not config_valid:
+        logger.debug("MCP config invalid or incomplete; loading no MCP tools")
         return []
-    
+
     # Step 3: Set up MCP server connection
     server_url = configurable.mcp_config.url.rstrip("/") + "/mcp"
     
@@ -501,10 +525,13 @@ async def load_mcp_tools(
     
     # Step 4: Load tools from MCP server
     try:
+        logger.info("Connecting to MCP server at %s", server_url)
         client = MultiServerMCPClient(mcp_server_config)
         available_mcp_tools = await client.get_tools()
+        logger.info("MCP server returned %d available tools", len(available_mcp_tools))
     except Exception:
         # If MCP server connection fails, return empty list
+        logger.exception("Failed to connect to MCP server at %s; returning no tools", server_url)
         return []
     
     # Step 5: Filter and configure tools
@@ -524,7 +551,8 @@ async def load_mcp_tools(
         # Wrap tool with authentication handling and add to list
         enhanced_tool = wrap_mcp_authenticate_tool(mcp_tool)
         configured_tools.append(enhanced_tool)
-    
+
+    logger.info("Configured %d MCP tools after filtering", len(configured_tools))
     return configured_tools
 
 
@@ -562,12 +590,13 @@ async def get_search_tool(search_api: SearchAPI):
             "name": "web_search"
         }
         return [search_tool]
-        
+
     elif search_api == SearchAPI.NONE:
         # No search functionality configured
         return []
-        
+
     # Default fallback for unknown search API types
+    logger.warning("Unknown search API %r; returning no search tools", search_api)
     return []
     
 async def get_all_tools(config: RunnableConfig):
@@ -585,6 +614,7 @@ async def get_all_tools(config: RunnableConfig):
     # Add configured search tools
     configurable = Configuration.from_runnable_config(config)
     search_api = SearchAPI(get_config_value(configurable.search_api))
+    logger.debug("Assembling tools with search API: %s", search_api)
     search_tools = await get_search_tool(search_api)
     tools.extend(search_tools)
     
@@ -597,7 +627,8 @@ async def get_all_tools(config: RunnableConfig):
     # Add MCP tools if configured
     mcp_tools = await load_mcp_tools(config, existing_tool_names)
     tools.extend(mcp_tools)
-    
+
+    logger.info("Assembled %d total tools for research operations", len(tools))
     return tools
 
 def get_notes_from_tool_calls(messages: list[MessageLikeRepresentation]):
@@ -638,6 +669,7 @@ def anthropic_websearch_called(response):
         
     except (AttributeError, TypeError):
         # Handle cases where response structure is unexpected
+        logger.debug("Could not inspect Anthropic response for web search usage", exc_info=True)
         return False
 
 def openai_websearch_called(response):
@@ -689,6 +721,11 @@ def is_token_limit_exceeded(exception: Exception, model_name: str = None) -> boo
         elif model_str.startswith('gemini:') or model_str.startswith('google:'):
             provider = 'gemini'
     
+    logger.debug(
+        "Checking token-limit exception (provider=%s, type=%s)",
+        provider or "unknown", type(exception).__name__,
+    )
+
     # Step 2: Check provider-specific token limit patterns
     if provider == 'openai':
         return _check_openai_token_limit(exception, error_str)
@@ -696,7 +733,7 @@ def is_token_limit_exceeded(exception: Exception, model_name: str = None) -> boo
         return _check_anthropic_token_limit(exception, error_str)
     elif provider == 'gemini':
         return _check_gemini_token_limit(exception, error_str)
-    
+
     # Step 3: If provider unknown, check all providers
     return (
         _check_openai_token_limit(exception, error_str) or
@@ -830,6 +867,8 @@ MODEL_TOKEN_LIMITS = {
     "bedrock:us.anthropic.claude-sonnet-4-20250514-v1:0": 200000,
     "bedrock:us.anthropic.claude-opus-4-20250514-v1:0": 200000,
     "anthropic.claude-opus-4-1-20250805-v1:0": 200000,
+    "openai:qwen2.5": 32768,
+    "openai:qwen3.6": 32768,
 }
 
 def get_model_token_limit(model_string):
@@ -844,9 +883,14 @@ def get_model_token_limit(model_string):
     # Search through known model token limits
     for model_key, token_limit in MODEL_TOKEN_LIMITS.items():
         if model_key in model_string:
+            logger.debug(
+                "Token limit for %s resolved to %d (matched %s)",
+                model_string, token_limit, model_key,
+            )
             return token_limit
-    
+
     # Model not found in lookup table
+    logger.warning("No token limit found for model %s", model_string)
     return None
 
 def remove_up_to_last_ai_message(messages: list[MessageLikeRepresentation]) -> list[MessageLikeRepresentation]:
@@ -864,9 +908,11 @@ def remove_up_to_last_ai_message(messages: list[MessageLikeRepresentation]) -> l
     for i in range(len(messages) - 1, -1, -1):
         if isinstance(messages[i], AIMessage):
             # Return everything up to (but not including) the last AI message
+            logger.debug("Truncating message history to %d messages (removed from last AI message)", i)
             return messages[:i]
-    
+
     # No AI messages found, return original list
+    logger.debug("No AI message found; returning message history unchanged")
     return messages
 
 ##########################
@@ -900,21 +946,30 @@ def get_api_key_for_model(model_name: str, config: RunnableConfig):
     if should_get_from_config.lower() == "true":
         api_keys = config.get("configurable", {}).get("apiKeys", {})
         if not api_keys:
+            logger.warning("GET_API_KEYS_FROM_CONFIG set but no apiKeys in config for model %s", model_name)
             return None
         if model_name.startswith("openai:"):
+            logger.debug("Resolving OPENAI_API_KEY from config for model %s", model_name)
             return api_keys.get("OPENAI_API_KEY")
         elif model_name.startswith("anthropic:"):
+            logger.debug("Resolving ANTHROPIC_API_KEY from config for model %s", model_name)
             return api_keys.get("ANTHROPIC_API_KEY")
         elif model_name.startswith("google"):
+            logger.debug("Resolving GOOGLE_API_KEY from config for model %s", model_name)
             return api_keys.get("GOOGLE_API_KEY")
+        logger.warning("No API-key provider mapping for model %s", model_name)
         return None
     else:
-        if model_name.startswith("openai:"): 
+        if model_name.startswith("openai:"):
+            logger.debug("Resolving OPENAI_API_KEY from environment for model %s", model_name)
             return os.getenv("OPENAI_API_KEY")
         elif model_name.startswith("anthropic:"):
+            logger.debug("Resolving ANTHROPIC_API_KEY from environment for model %s", model_name)
             return os.getenv("ANTHROPIC_API_KEY")
         elif model_name.startswith("google"):
+            logger.debug("Resolving GOOGLE_API_KEY from environment for model %s", model_name)
             return os.getenv("GOOGLE_API_KEY")
+        logger.warning("No API-key provider mapping for model %s", model_name)
         return None
 
 def get_tavily_api_key(config: RunnableConfig):
@@ -923,9 +978,14 @@ def get_tavily_api_key(config: RunnableConfig):
     if should_get_from_config.lower() == "true":
         api_keys = config.get("configurable", {}).get("apiKeys", {})
         if not api_keys:
+            logger.warning("GET_API_KEYS_FROM_CONFIG set but no apiKeys in config for Tavily")
             return None
+        if not api_keys.get("TAVILY_API_KEY"):
+            logger.warning("No TAVILY_API_KEY available in config")
         return api_keys.get("TAVILY_API_KEY")
     else:
+        if not os.getenv("TAVILY_API_KEY"):
+            logger.warning("No TAVILY_API_KEY available in environment")
         return os.getenv("TAVILY_API_KEY")
 
 
@@ -938,12 +998,13 @@ async def arxiv_search(query: str, max_results: int = 5) -> list:
     import httpx
     url = "http://export.arxiv.org/api/query"
     params = {"search_query": f"all:{query}", "max_results": max_results, "sortBy": "relevance"}
+    logger.info("arXiv search starting: query=%.80r (max_results=%d)", query, max_results)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
-    except Exception as e:
-        logger.warning(f"arXiv search failed: {e}")
+    except Exception:
+        logger.exception("arXiv search failed for query=%.80r", query)
         return []
 
     import xml.etree.ElementTree as ET
@@ -971,6 +1032,10 @@ async def arxiv_search(query: str, max_results: int = 5) -> list:
             "authors": authors,
             "pdf_url": pdf_link,
         })
+    if not results:
+        logger.warning("arXiv search returned no results for query=%.80r", query)
+    else:
+        logger.info("arXiv search completed: %d results", len(results))
     return results
 
 
@@ -979,13 +1044,14 @@ async def semantic_scholar_search(query: str, max_results: int = 5) -> list:
     import httpx
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {"query": query, "limit": max_results, "fields": "title,abstract,citationCount,authors,year,url,externalIds"}
+    logger.info("Semantic Scholar search starting: query=%.80r (max_results=%d)", query, max_results)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
-    except Exception as e:
-        logger.warning(f"Semantic Scholar search failed: {e}")
+    except Exception:
+        logger.exception("Semantic Scholar search failed for query=%.80r", query)
         return []
 
     results = []
@@ -1003,6 +1069,10 @@ async def semantic_scholar_search(query: str, max_results: int = 5) -> list:
             "doi": ext_ids.get("DOI"),
             "authors": authors,
         })
+    if not results:
+        logger.warning("Semantic Scholar search returned no results for query=%.80r", query)
+    else:
+        logger.info("Semantic Scholar search completed: %d results", len(results))
     return results
 
 
@@ -1011,20 +1081,22 @@ async def pubmed_search(query: str, max_results: int = 5) -> list:
     import httpx
     search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     search_params = {"db": "pubmed", "term": query, "retmax": max_results, "retmode": "json"}
+    logger.info("PubMed search starting: query=%.80r (max_results=%d)", query, max_results)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             search_resp = await client.get(search_url, params=search_params)
             search_resp.raise_for_status()
             ids = search_resp.json().get("esearchresult", {}).get("idlist", [])
             if not ids:
+                logger.warning("PubMed search returned no IDs for query=%.80r", query)
                 return []
             summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
             summary_params = {"db": "pubmed", "id": ",".join(ids), "retmode": "json"}
             summary_resp = await client.get(summary_url, params=summary_params)
             summary_resp.raise_for_status()
             results_data = summary_resp.json().get("result", {})
-    except Exception as e:
-        logger.warning(f"PubMed search failed: {e}")
+    except Exception:
+        logger.exception("PubMed search failed for query=%.80r", query)
         return []
 
     results = []
@@ -1041,6 +1113,7 @@ async def pubmed_search(query: str, max_results: int = 5) -> list:
             "provider": "pubmed",
             "authors": authors,
         })
+    logger.info("PubMed search completed: %d results", len(results))
     return results
 
 
@@ -1049,13 +1122,14 @@ async def crossref_search(query: str, max_results: int = 5) -> list:
     import httpx
     url = "https://api.crossref.org/works"
     params = {"query": query, "rows": max_results}
+    logger.info("Crossref search starting: query=%.80r (max_results=%d)", query, max_results)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             items = resp.json().get("message", {}).get("items", [])
-    except Exception as e:
-        logger.warning(f"Crossref search failed: {e}")
+    except Exception:
+        logger.exception("Crossref search failed for query=%.80r", query)
         return []
 
     results = []
@@ -1089,6 +1163,10 @@ async def crossref_search(query: str, max_results: int = 5) -> list:
             "citation_count": item.get("is-referenced-by-count"),
             "authors": authors,
         })
+    if not results:
+        logger.warning("Crossref search returned no results for query=%.80r", query)
+    else:
+        logger.info("Crossref search completed: %d results", len(results))
     return results
 
 
@@ -1131,6 +1209,13 @@ def enforce_source_diversity(
             dominant_ratio = ratio
             dominant_domain = domain
     passed = unique_domains >= min_unique_domains and dominant_ratio <= max_same_domain_ratio
+    if not passed:
+        logger.warning(
+            "Source diversity check failed: %d unique domains (min=%d), dominant=%s ratio=%.2f (max=%.2f)",
+            unique_domains, min_unique_domains, dominant_domain, dominant_ratio, max_same_domain_ratio,
+        )
+    else:
+        logger.debug("Source diversity check passed: %d unique domains across %d results", unique_domains, total)
     return {
         "passed": passed,
         "histogram": histogram,
@@ -1208,8 +1293,10 @@ def get_search_aggregator(config):
             from tavily import AsyncTavilyClient
             api_key = os.getenv("TAVILY_API_KEY")
             if not api_key:
+                logger.warning("Tavily provider selected but no TAVILY_API_KEY available")
                 return []
             client = AsyncTavilyClient(api_key=api_key)
+            logger.info("Tavily aggregator search: query=%.80r", query)
             response = await client.search(query, max_results=10)
             return [
                 {
@@ -1230,14 +1317,16 @@ def get_search_aggregator(config):
         async def duckduckgo_search(query: str) -> list:
             try:
                 from duckduckgo_search import DDGS
+                logger.info("DuckDuckGo aggregator search: query=%.80r", query)
                 with DDGS() as ddgs:
                     results = list(ddgs.text(query, max_results=10))
+                    logger.info("DuckDuckGo search completed: %d results", len(results))
                     return [
                         {"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", ""), "provider": "duckduckgo"}
                         for r in results
                     ]
-            except Exception as e:
-                logger.warning(f"DuckDuckGo search failed: {e}")
+            except Exception:
+                logger.exception("DuckDuckGo search failed for query=%.80r", query)
                 return []
         search_functions["duckduckgo"] = duckduckgo_search
 
@@ -1256,4 +1345,8 @@ def get_search_aggregator(config):
             providers.append(SearchProviderConfig(name="crossref", priority=8))
             search_functions["crossref"] = crossref_search
 
+    logger.info(
+        "Search aggregator built with %d providers: %s",
+        len(providers), sorted(search_functions.keys()),
+    )
     return SearchAggregator(providers, search_functions)

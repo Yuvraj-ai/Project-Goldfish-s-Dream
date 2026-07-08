@@ -34,9 +34,14 @@ class WebhookNotifier:
         webhooks = await self._repo.list_webhooks()
         matching = [wh for wh in webhooks if wh.active and event_type in wh.events]
         if not matching:
+            logger.debug("No matching webhooks for event %s", event_type)
             return
 
         body = json.dumps(payload).encode()
+        logger.info(
+            "Dispatching webhook event %s to %d endpoint(s) (payload=%d bytes)",
+            event_type, len(matching), len(body),
+        )
         client = await self._get_client()
         for wh in matching:
             task = asyncio.create_task(
@@ -56,6 +61,10 @@ class WebhookNotifier:
         if wh.secret:
             headers["X-Webhook-Signature"] = generate_signature(wh.secret, body)
 
+        logger.debug(
+            "Delivering webhook %s event=%s to %s (%d bytes, retry_max=%d)",
+            wh.id, event_type, wh.url, len(body), wh.retry_max,
+        )
         for attempt in range(wh.retry_max):
             try:
                 response = await client.post(
@@ -65,12 +74,29 @@ class WebhookNotifier:
                     timeout=wh.timeout_seconds,
                 )
                 if response.status_code < 500:
+                    logger.info(
+                        "Webhook %s delivered event=%s (status=%d, attempt=%d)",
+                        wh.id, event_type, response.status_code, attempt + 1,
+                    )
                     return
+                logger.warning(
+                    "Webhook %s delivery failed event=%s (status=%d, attempt=%d, will retry=%s)",
+                    wh.id, event_type, response.status_code, attempt + 1,
+                    attempt < wh.retry_max - 1,
+                )
             except Exception:
-                logger.exception("Webhook delivery attempt %d failed", attempt + 1)
+                logger.exception(
+                    "Webhook %s delivery attempt %d failed (event=%s, will retry=%s)",
+                    wh.id, attempt + 1, event_type, attempt < wh.retry_max - 1,
+                )
 
             if attempt < wh.retry_max - 1:
                 await asyncio.sleep(2 ** attempt)
+
+        logger.error(
+            "Webhook %s failed to deliver event=%s after %d attempt(s)",
+            wh.id, event_type, wh.retry_max,
+        )
 
     @staticmethod
     def _matches_event(wh: WebhookConfig, event_type: str) -> bool:
@@ -83,7 +109,9 @@ class WebhookNotifier:
 
     async def close(self) -> None:
         if self._delivery_tasks:
+            logger.debug("Awaiting %d in-flight webhook delivery task(s)", len(self._delivery_tasks))
             await asyncio.gather(*self._delivery_tasks, return_exceptions=True)
         if self._client:
             await self._client.aclose()
             self._client = None
+        logger.info("WebhookNotifier closed")

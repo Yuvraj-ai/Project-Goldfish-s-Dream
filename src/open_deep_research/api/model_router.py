@@ -87,7 +87,18 @@ class ModelRouter:
         complexity_hint: ModelTier | None = None,
     ) -> tuple[str, ModelTier]:
         tier = self._resolve_tier(task_type, input_length, complexity_hint)
-        model = self._providers[0].models.get(tier, self._providers[0].models[ModelTier.BALANCED])
+        provider_models = self._providers[0].models
+        model = provider_models.get(tier)
+        if model is None:
+            model = provider_models[ModelTier.BALANCED]
+            logger.warning(
+                "No model for tier %s on provider %s; falling back to BALANCED (%s) for task %s",
+                tier.value, self._providers[0].name, model, task_type.value,
+            )
+        logger.debug(
+            "Selected model %s for task %s (tier=%s, input_length=%d)",
+            model, task_type.value, tier.value, input_length,
+        )
         return model, tier
 
     def select_with_tier_if_enabled(
@@ -99,6 +110,7 @@ class ModelRouter:
     ) -> tuple[str, ModelTier] | None:
         """Select model with tier, return None if routing is disabled."""
         if not enabled:
+            logger.debug("Model routing disabled for task %s; returning None", task_type.value)
             return None
         return self.select_with_tier(task_type, input_length, complexity_hint)
 
@@ -109,8 +121,16 @@ class ModelRouter:
         complexity_hint: ModelTier | None,
     ) -> ModelTier:
         if complexity_hint:
+            logger.debug(
+                "Tier resolved by complexity_hint=%s for task %s",
+                complexity_hint.value, task_type.value,
+            )
             return complexity_hint
         base = self._tier_map.get(task_type, ModelTier.BALANCED)
         if input_length > self._long_input_threshold and base == ModelTier.FAST:
+            logger.warning(
+                "Rerouting task %s from FAST to BALANCED (input_length=%d > threshold=%d)",
+                task_type.value, input_length, self._long_input_threshold,
+            )
             return ModelTier.BALANCED
         return base

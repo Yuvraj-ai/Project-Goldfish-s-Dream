@@ -27,6 +27,10 @@ class CoverageMatrix(BaseModel):
         if key not in self.coverage:
             self.coverage[key] = []
         self.coverage[key].append(evidence_id)
+        logger.debug(
+            "add_evidence: key=%.80r evidence_id=%s (%d for key)",
+            key, evidence_id, len(self.coverage[key]),
+        )
 
     def find_gaps(self) -> List[dict]:
         """Find subquestion/perspective pairs with no evidence."""
@@ -36,15 +40,22 @@ class CoverageMatrix(BaseModel):
                 key = f"{sq}::{pers}"
                 if key not in self.coverage or not self.coverage[key]:
                     gaps.append({"subquestion": sq, "perspective": pers})
+        logger.info(
+            "find_gaps: %d gaps across %d subquestions x %d perspectives",
+            len(gaps), len(self.subquestions), len(self.perspectives),
+        )
         return gaps
 
     def coverage_percentage(self) -> float:
         """Calculate what percentage of the matrix is covered."""
         total = len(self.subquestions) * len(self.perspectives)
         if total == 0:
+            logger.debug("coverage_percentage: empty matrix, returning 100.0")
             return 100.0
         covered = sum(1 for key in self.coverage if self.coverage[key])
-        return round((covered / total) * 100, 1)
+        pct = round((covered / total) * 100, 1)
+        logger.debug("coverage_percentage: %d/%d covered = %.1f%%", covered, total, pct)
+        return pct
 
 
 # Pre-defined perspective sets by research mode
@@ -145,13 +156,27 @@ class PerspectiveGenerator:
         max_perspectives: int = 7,
     ) -> List[PerspectiveLens]:
         """Generate perspective lenses for the given research mode."""
+        logger.info(
+            "generate_perspectives: research_mode=%s max_perspectives=%d",
+            research_mode, max_perspectives,
+        )
         mode_map = {
             "market_landscape": _MARKET_PERSPECTIVES,
             "policy_legal_regulatory": _POLICY_PERSPECTIVES,
             "comparison": _COMPARISON_PERSPECTIVES,
         }
+        if research_mode not in mode_map:
+            logger.warning(
+                "generate_perspectives: unknown research_mode %s, using default perspectives",
+                research_mode,
+            )
         perspectives = mode_map.get(research_mode, _DEFAULT_PERSPECTIVES)
-        return perspectives[:max_perspectives]
+        selected = perspectives[:max_perspectives]
+        logger.info(
+            "generate_perspectives: selected %d/%d perspectives for mode %s",
+            len(selected), len(perspectives), research_mode,
+        )
+        return selected
 
     @staticmethod
     def build_coverage_matrix(
@@ -159,6 +184,10 @@ class PerspectiveGenerator:
         perspectives: List[PerspectiveLens],
     ) -> CoverageMatrix:
         """Build a coverage matrix for subquestions and perspectives."""
+        logger.info(
+            "build_coverage_matrix: %d subquestions x %d perspectives",
+            len(subquestions), len(perspectives),
+        )
         return CoverageMatrix(
             subquestions=subquestions,
             perspectives=[p.name for p in perspectives],
