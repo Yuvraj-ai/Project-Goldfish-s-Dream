@@ -20,7 +20,7 @@ Built on LangGraph's `open_deep_research` — extended with evidence-first archi
 - **QA reviewer loop** — 4 parallel reviewers (coverage, evidence, contradiction, style) with auto-rewrite
 - **Multi-format export** — Markdown, HTML, PDF, DOCX, JSON
 - **REST API** — FastAPI server with SSE progress streaming, webhooks, cross-session memory, API key auth
-- **Observability** — Prometheus metrics endpoint, structured JSON logging, LangSmith tracing
+- **Observability** — Prometheus metrics endpoint, LangSmith tracing, and centralized leveled logging (colored console + daily-rotating file, with JSON/`request_id` mode for aggregators)
 - **Security** — Prompt injection defense (56 patterns), rate limiting, circuit breakers, input validation
 - **Model routing** — 3-tier model selection (fast/balanced/quality) per task type for cost optimization
 
@@ -429,6 +429,41 @@ flowchart LR
 | `policy_memo` | Policy analysis |
 | `news_brief` | Timely news summary |
 
+### Logging
+
+Logging is configured centrally by `logging_config.setup_logging()` (built on the
+vendored `pretty_logger`). It is wired at both entry points — the API server and
+`deep_researcher` import — so library, LangGraph Studio, and REST usage all get the
+same output. Every module logs through the standard `logging.getLogger(__name__)`
+pattern; handlers are attached once to the `open_deep_research` package logger.
+
+Two sinks are always active:
+- **Console** — colored by level when stdout is a TTY (auto-plain otherwise).
+- **File** — plain text at `LOG_DIR/applog.log`, rotated daily, kept for 30 days.
+  Best-effort: a read-only filesystem disables the file sink with a warning instead
+  of crashing.
+
+Controlled entirely by environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
+| `LOG_DIR` | `logs` | Directory for the rotating file log |
+| `LOG_FORMAT` | auto | `color`, `plain`, or `json` (structured, for Loki/Datadog/etc.) |
+| `NO_COLOR` | unset | If set, forces plain console ([no-color.org](https://no-color.org)) |
+
+In `json` mode each line includes a `request_id`, populated per-request by the API
+middleware, so a single request can be traced across every module.
+
+```bash
+# Verbose colored dev logs
+LOG_LEVEL=DEBUG LOG_FORMAT=color uvx langgraph dev
+
+# Structured logs for a container/aggregator
+LOG_LEVEL=INFO LOG_FORMAT=json LOG_DIR=/var/log/odr ENABLE_REST_API=true \
+  API_KEY=... .venv/bin/python -m open_deep_research.api.main
+```
+
 ---
 
 ## API Endpoints
@@ -515,6 +550,8 @@ src/open_deep_research/
 ├── telemetry.py             # Cost tracking
 ├── research_cache.py        # Mode-aware caching
 ├── exceptions.py            # Exception hierarchy
+├── logging_config.py        # Centralized logging setup (levels, formats, rotation)
+├── _vendor/                 # Vendored third-party (pretty_logger, upstream snapshot)
 └── api/                     # REST API server
     ├── main.py              # FastAPI app
     ├── repository.py        # Persistence ABC
