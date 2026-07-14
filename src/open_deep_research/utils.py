@@ -832,74 +832,6 @@ def _check_gemini_token_limit(exception: Exception, error_str: str) -> bool:
     
     return False
 
-# NOTE: This may be out of date or not applicable to your models. Please update this as needed.
-MODEL_TOKEN_LIMITS = {
-    "openai:gpt-4.1-mini": 1047576,
-    "openai:gpt-4.1-nano": 1047576,
-    "openai:gpt-4.1": 1047576,
-    "openai:gpt-4o-mini": 128000,
-    "openai:gpt-4o": 128000,
-    "openai:o4-mini": 200000,
-    "openai:o3-mini": 200000,
-    "openai:o3": 200000,
-    "openai:o3-pro": 200000,
-    "openai:o1": 200000,
-    "openai:o1-pro": 200000,
-    "anthropic:claude-opus-4": 200000,
-    "anthropic:claude-sonnet-4": 200000,
-    "anthropic:claude-3-7-sonnet": 200000,
-    "anthropic:claude-3-5-sonnet": 200000,
-    "anthropic:claude-3-5-haiku": 200000,
-    "google:gemini-1.5-pro": 2097152,
-    "google:gemini-1.5-flash": 1048576,
-    "google:gemini-pro": 32768,
-    "cohere:command-r-plus": 128000,
-    "cohere:command-r": 128000,
-    "cohere:command-light": 4096,
-    "cohere:command": 4096,
-    "mistral:mistral-large": 32768,
-    "mistral:mistral-medium": 32768,
-    "mistral:mistral-small": 32768,
-    "mistral:mistral-7b-instruct": 32768,
-    "ollama:codellama": 16384,
-    "ollama:llama2:70b": 4096,
-    "ollama:llama2:13b": 4096,
-    "ollama:llama2": 4096,
-    "ollama:mistral": 32768,
-    "bedrock:us.amazon.nova-premier-v1:0": 1000000,
-    "bedrock:us.amazon.nova-pro-v1:0": 300000,
-    "bedrock:us.amazon.nova-lite-v1:0": 300000,
-    "bedrock:us.amazon.nova-micro-v1:0": 128000,
-    "bedrock:us.anthropic.claude-3-7-sonnet-20250219-v1:0": 200000,
-    "bedrock:us.anthropic.claude-sonnet-4-20250514-v1:0": 200000,
-    "bedrock:us.anthropic.claude-opus-4-20250514-v1:0": 200000,
-    "anthropic.claude-opus-4-1-20250805-v1:0": 200000,
-    "openai:qwen2.5": 32768,
-    "openai:qwen3.6": 32768,
-}
-
-def get_model_token_limit(model_string):
-    """Look up the token limit for a specific model.
-    
-    Args:
-        model_string: The model identifier string to look up
-        
-    Returns:
-        Token limit as integer if found, None if model not in lookup table
-    """
-    # Search through known model token limits
-    for model_key, token_limit in MODEL_TOKEN_LIMITS.items():
-        if model_key in model_string:
-            logger.debug(
-                "Token limit for %s resolved to %d (matched %s)",
-                model_string, token_limit, model_key,
-            )
-            return token_limit
-
-    # Model not found in lookup table
-    logger.warning("No token limit found for model %s", model_string)
-    return None
-
 def remove_up_to_last_ai_message(messages: list[MessageLikeRepresentation]) -> list[MessageLikeRepresentation]:
     """Truncate message history by removing up to the last AI message.
     
@@ -921,6 +853,22 @@ def remove_up_to_last_ai_message(messages: list[MessageLikeRepresentation]) -> l
     # No AI messages found, return original list
     logger.debug("No AI message found; returning message history unchanged")
     return messages
+
+def get_tavily_api_key(config: RunnableConfig):
+    """Get Tavily API key from environment or config."""
+    should_get_from_config = os.getenv("GET_API_KEYS_FROM_CONFIG", "false")
+    if should_get_from_config.lower() == "true":
+        api_keys = config.get("configurable", {}).get("apiKeys", {})
+        if not api_keys:
+            logger.warning("GET_API_KEYS_FROM_CONFIG set but no apiKeys in config for Tavily")
+            return None
+        if not api_keys.get("TAVILY_API_KEY"):
+            logger.warning("No TAVILY_API_KEY available in config")
+        return api_keys.get("TAVILY_API_KEY")
+    else:
+        if not os.getenv("TAVILY_API_KEY"):
+            logger.warning("No TAVILY_API_KEY available in environment")
+        return os.getenv("TAVILY_API_KEY")
 
 ##########################
 # Misc Utils
@@ -945,39 +893,6 @@ def get_config_value(value):
         return value
     else:
         return value.value
-
-def get_api_key_for_model(model_name: str, config: RunnableConfig):
-    """Get API key for a specific model from environment or config."""
-    should_get_from_config = os.getenv("GET_API_KEYS_FROM_CONFIG", "false")
-    model_name = model_name.lower()
-    if should_get_from_config.lower() == "true":
-        api_keys = config.get("configurable", {}).get("apiKeys", {})
-        if not api_keys:
-            logger.warning("GET_API_KEYS_FROM_CONFIG set but no apiKeys in config for model %s", model_name)
-            return None
-        if model_name.startswith("openai:"):
-            logger.debug("Resolving OPENAI_API_KEY from config for model %s", model_name)
-            return api_keys.get("OPENAI_API_KEY")
-        elif model_name.startswith("anthropic:"):
-            logger.debug("Resolving ANTHROPIC_API_KEY from config for model %s", model_name)
-            return api_keys.get("ANTHROPIC_API_KEY")
-        elif model_name.startswith("google"):
-            logger.debug("Resolving GOOGLE_API_KEY from config for model %s", model_name)
-            return api_keys.get("GOOGLE_API_KEY")
-        logger.warning("No API-key provider mapping for model %s", model_name)
-        return None
-    else:
-        if model_name.startswith("openai:"):
-            logger.debug("Resolving OPENAI_API_KEY from environment for model %s", model_name)
-            return os.getenv("OPENAI_API_KEY")
-        elif model_name.startswith("anthropic:"):
-            logger.debug("Resolving ANTHROPIC_API_KEY from environment for model %s", model_name)
-            return os.getenv("ANTHROPIC_API_KEY")
-        elif model_name.startswith("google"):
-            logger.debug("Resolving GOOGLE_API_KEY from environment for model %s", model_name)
-            return os.getenv("GOOGLE_API_KEY")
-        logger.warning("No API-key provider mapping for model %s", model_name)
-        return None
 
 def get_tavily_api_key(config: RunnableConfig):
     """Get Tavily API key from environment or config."""

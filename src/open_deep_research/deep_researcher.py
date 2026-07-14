@@ -79,7 +79,6 @@ from open_deep_research.state import (
 from open_deep_research.utils import (
     anthropic_websearch_called,
     get_all_tools,
-    get_model_token_limit,
     get_notes_from_tool_calls,
     get_today_str,
     is_token_limit_exceeded,
@@ -1876,7 +1875,13 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
 
                 if current_retry == 1:
                     # First retry: determine initial truncation limit
-                    model_token_limit = get_model_token_limit(configurable.final_report_model)
+                    try:
+                        resolved_report_model = configurable.resolve_model(
+                            configurable.final_report_model, config
+                        )
+                        model_token_limit = resolved_report_model.token_limit
+                    except ValueError:
+                        model_token_limit = None
                     if not model_token_limit:
                         logger.error("final_report_generation: unknown token limit for model=%s, aborting",
                                      configurable.final_report_model)

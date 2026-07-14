@@ -18,12 +18,10 @@ from open_deep_research.utils import (
     arxiv_search,
     crossref_search,
     enforce_source_diversity,
-    get_api_key_for_model,
     get_config_value,
     get_domain,
     get_domain_histogram,
     get_mcp_access_token,
-    get_model_token_limit,
     get_all_tools,
     get_notes_from_tool_calls,
     get_search_aggregator,
@@ -74,23 +72,6 @@ class TestThinkTool:
         result = think_tool.invoke({"reflection": "test reflection"})
         assert "Reflection recorded" in result
         assert "test reflection" in result
-
-
-class TestGetModelTokenLimit:
-    def test_known_model_openai(self):
-        assert get_model_token_limit("openai:gpt-4o") == 128000
-
-    def test_known_model_anthropic(self):
-        assert get_model_token_limit("anthropic:claude-sonnet-4") == 200000
-
-    def test_known_model_google(self):
-        assert get_model_token_limit("google:gemini-pro") == 32768
-
-    def test_known_model_substring(self):
-        assert get_model_token_limit("openai:gpt-4o-mini") == 128000
-
-    def test_unknown_model(self):
-        assert get_model_token_limit("unknown:model") is None
 
 
 class TestRemoveUpToLastAiMessage:
@@ -381,92 +362,6 @@ class TestCheckGeminiTokenLimit:
     def test_no_match(self):
         exc = ValueError("some error")
         assert _check_gemini_token_limit(exc, "some error") is False
-
-
-class TestGetApiKeyForModel:
-    @patch("open_deep_research.utils.os.getenv")
-    def test_from_env_openai(self, mock_getenv):
-        mock_getenv.side_effect = lambda k, d=None: {
-            "GET_API_KEYS_FROM_CONFIG": "false",
-            "OPENAI_API_KEY": "sk-openai-env",
-        }.get(k, d)
-        assert get_api_key_for_model("openai:gpt-4o", {}) == "sk-openai-env"
-
-    @patch("open_deep_research.utils.os.getenv")
-    def test_from_env_anthropic(self, mock_getenv):
-        mock_getenv.side_effect = lambda k, d=None: {
-            "GET_API_KEYS_FROM_CONFIG": "false",
-            "ANTHROPIC_API_KEY": "sk-anthropic-env",
-        }.get(k, d)
-        assert get_api_key_for_model("anthropic:claude-sonnet-4", {}) == "sk-anthropic-env"
-
-    @patch("open_deep_research.utils.os.getenv")
-    def test_from_env_google(self, mock_getenv):
-        mock_getenv.side_effect = lambda k, d=None: {
-            "GET_API_KEYS_FROM_CONFIG": "false",
-            "GOOGLE_API_KEY": "sk-google-env",
-        }.get(k, d)
-        assert get_api_key_for_model("google:gemini-pro", {}) == "sk-google-env"
-
-    @patch("open_deep_research.utils.os.getenv")
-    def test_from_env_unknown_model(self, mock_getenv):
-        mock_getenv.side_effect = lambda k, d=None: {
-            "GET_API_KEYS_FROM_CONFIG": "false",
-        }.get(k, d)
-        assert get_api_key_for_model("unknown:model", {}) is None
-
-    @patch("open_deep_research.utils.os.getenv")
-    def test_from_config(self, mock_getenv):
-        mock_getenv.return_value = "true"
-        config = {
-            "configurable": {
-                "apiKeys": {
-                    "OPENAI_API_KEY": "sk-openai-config",
-                }
-            }
-        }
-        assert get_api_key_for_model("openai:gpt-4o", config) == "sk-openai-config"
-
-    @patch("open_deep_research.utils.os.getenv")
-    def test_from_config_no_api_keys(self, mock_getenv):
-        mock_getenv.return_value = "true"
-        assert get_api_key_for_model("openai:gpt-4o", {}) is None
-
-    @patch("open_deep_research.utils.os.getenv")
-    def test_from_config_anthropic(self, mock_getenv):
-        mock_getenv.return_value = "true"
-        config = {
-            "configurable": {
-                "apiKeys": {
-                    "ANTHROPIC_API_KEY": "sk-anthropic-config",
-                }
-            }
-        }
-        assert get_api_key_for_model("anthropic:claude-sonnet-4", config) == "sk-anthropic-config"
-
-    @patch("open_deep_research.utils.os.getenv")
-    def test_from_config_google(self, mock_getenv):
-        mock_getenv.return_value = "true"
-        config = {
-            "configurable": {
-                "apiKeys": {
-                    "GOOGLE_API_KEY": "sk-google-config",
-                }
-            }
-        }
-        assert get_api_key_for_model("google:gemini-pro", config) == "sk-google-config"
-
-    @patch("open_deep_research.utils.os.getenv")
-    def test_from_config_unknown_model(self, mock_getenv):
-        mock_getenv.return_value = "true"
-        config = {
-            "configurable": {
-                "apiKeys": {
-                    "SOME_KEY": "some-value",
-                }
-            }
-        }
-        assert get_api_key_for_model("unknown:model", config) is None
 
 
 class TestGetTavilyApiKey:
