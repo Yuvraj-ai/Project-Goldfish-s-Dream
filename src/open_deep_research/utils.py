@@ -31,7 +31,11 @@ from langgraph.config import get_store
 from mcp import McpError
 from tavily import AsyncTavilyClient
 
-from open_deep_research.configuration import Configuration, SearchAPI
+from open_deep_research.configuration import (
+    Configuration,
+    SearchAPI,
+    build_model_config,
+)
 from open_deep_research.prompts import summarize_webpage_prompt
 from open_deep_research.state import ResearchComplete, Summary
 
@@ -91,12 +95,15 @@ async def tavily_search(
     max_char_to_include = configurable.max_content_length
     
     # Initialize summarization model with retry logic
-    model_api_key = get_api_key_for_model(configurable.summarization_model, config)
+    model_config = build_model_config(
+        configurable, configurable.summarization_model,
+        configurable.summarization_model_max_tokens, config,
+    )
     summarization_model = init_chat_model(
-        model=configurable.summarization_model,
-        max_tokens=configurable.summarization_model_max_tokens,
-        api_key=model_api_key,
-        tags=["langsmith:nostream"]
+        model=model_config["model"],
+        max_tokens=model_config["max_tokens"],
+        api_key=model_config["api_key"],
+        tags=model_config["tags"],
     ).with_structured_output(Summary, method="function_calling").with_retry(
         stop_after_attempt=configurable.max_structured_output_retries
     )

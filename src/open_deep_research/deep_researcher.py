@@ -79,7 +79,6 @@ from open_deep_research.state import (
 from open_deep_research.utils import (
     anthropic_websearch_called,
     get_all_tools,
-    get_api_key_for_model,
     get_model_token_limit,
     get_notes_from_tool_calls,
     get_today_str,
@@ -179,19 +178,20 @@ async def clarify_with_user(state: AgentState, config: RunnableConfig) -> Comman
 
     # Step 2: Prepare the model for structured clarification analysis
     messages = state["messages"]
-    model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"]
-    }
-    routed_model, routed_key = _resolve_model_via_router(
+    resolved = _resolve_model_via_router(
         configurable, config, TaskType.CLASSIFICATION,
-        model_config["model"],
+        configurable.research_model,
     )
-    if routed_key:
-        model_config["model"] = routed_model
-        model_config["api_key"] = routed_key
+    if resolved is not None:
+        model_config = build_model_config(
+            configurable, resolved.model_string,
+            configurable.research_model_max_tokens, config,
+        )
+    else:
+        model_config = build_model_config(
+            configurable, configurable.research_model,
+            configurable.research_model_max_tokens, config,
+        )
     
     # Configure model with structured output and retry logic
     clarification_model = (
@@ -244,19 +244,20 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> Com
     # Step 1: Set up the research model for structured output
     configurable = Configuration.from_runnable_config(config)
     logger.info("write_research_brief: entry, #messages=%d", len(state.get("messages", [])))
-    research_model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"]
-    }
-    routed_model, routed_key = _resolve_model_via_router(
+    resolved = _resolve_model_via_router(
         configurable, config, TaskType.PLANNING,
-        research_model_config["model"],
+        configurable.research_model,
     )
-    if routed_key:
-        research_model_config["model"] = routed_model
-        research_model_config["api_key"] = routed_key
+    if resolved is not None:
+        research_model_config = build_model_config(
+            configurable, resolved.model_string,
+            configurable.research_model_max_tokens, config,
+        )
+    else:
+        research_model_config = build_model_config(
+            configurable, configurable.research_model,
+            configurable.research_model_max_tokens, config,
+        )
 
     # Configure model for structured research question generation
     research_model = (
@@ -317,19 +318,19 @@ async def classify_research_request(state: AgentState, config: RunnableConfig) -
         reasoning: str
         suggested_report_profile: dict
 
-    classifier_model_config = {
-        "model": configurable.classifier_model or configurable.research_model,
-        "max_tokens": 1024,
-        "api_key": get_api_key_for_model(configurable.classifier_model or configurable.research_model, config),
-        "tags": ["langsmith:nostream"]
-    }
-    routed_model, routed_key = _resolve_model_via_router(
+    classifier_model_string = configurable.classifier_model or configurable.research_model
+    resolved = _resolve_model_via_router(
         configurable, config, TaskType.CLASSIFICATION,
-        classifier_model_config["model"],
+        classifier_model_string,
     )
-    if routed_key:
-        classifier_model_config["model"] = routed_model
-        classifier_model_config["api_key"] = routed_key
+    if resolved is not None:
+        classifier_model_config = build_model_config(
+            configurable, resolved.model_string, 1024, config,
+        )
+    else:
+        classifier_model_config = build_model_config(
+            configurable, classifier_model_string, 1024, config,
+        )
 
     classifier_model = (
         configurable_model
@@ -444,19 +445,18 @@ async def generate_research_plan(state: AgentState, config: RunnableConfig) -> C
                 return {k: [v] for k, v in v.items()}
             return v
 
-    planner_model_config = {
-        "model": configurable.research_model,
-        "max_tokens": 2048,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"]
-    }
-    routed_model, routed_key = _resolve_model_via_router(
+    resolved = _resolve_model_via_router(
         configurable, config, TaskType.PLANNING,
-        planner_model_config["model"],
+        configurable.research_model,
     )
-    if routed_key:
-        planner_model_config["model"] = routed_model
-        planner_model_config["api_key"] = routed_key
+    if resolved is not None:
+        planner_model_config = build_model_config(
+            configurable, resolved.model_string, 2048, config,
+        )
+    else:
+        planner_model_config = build_model_config(
+            configurable, configurable.research_model, 2048, config,
+        )
 
     planner_model = (
         configurable_model
@@ -550,19 +550,20 @@ async def supervisor(state: SupervisorState, config: RunnableConfig) -> Command[
     # Step 1: Configure the supervisor model with available tools
     configurable = Configuration.from_runnable_config(config)
     logger.info("supervisor: entry, iteration=%d", state.get("research_iterations", 0))
-    research_model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"]
-    }
-    routed_model, routed_key = _resolve_model_via_router(
+    resolved = _resolve_model_via_router(
         configurable, config, TaskType.REASONING,
-        research_model_config["model"],
+        configurable.research_model,
     )
-    if routed_key:
-        research_model_config["model"] = routed_model
-        research_model_config["api_key"] = routed_key
+    if resolved is not None:
+        research_model_config = build_model_config(
+            configurable, resolved.model_string,
+            configurable.research_model_max_tokens, config,
+        )
+    else:
+        research_model_config = build_model_config(
+            configurable, configurable.research_model,
+            configurable.research_model_max_tokens, config,
+        )
 
     # Available tools: research delegation, completion signaling, and strategic thinking
     lead_researcher_tools = [ConductResearch, ResearchComplete, think_tool]
@@ -807,19 +808,20 @@ async def researcher(state: ResearcherState, config: RunnableConfig) -> Command[
         )
     
     # Step 2: Configure the researcher model with tools
-    research_model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"]
-    }
-    routed_model, routed_key = _resolve_model_via_router(
+    resolved = _resolve_model_via_router(
         configurable, config, TaskType.EXTRACTION,
-        research_model_config["model"],
+        configurable.research_model,
     )
-    if routed_key:
-        research_model_config["model"] = routed_model
-        research_model_config["api_key"] = routed_key
+    if resolved is not None:
+        research_model_config = build_model_config(
+            configurable, resolved.model_string,
+            configurable.research_model_max_tokens, config,
+        )
+    else:
+        research_model_config = build_model_config(
+            configurable, configurable.research_model,
+            configurable.research_model_max_tokens, config,
+        )
     
     # Prepare system prompt with MCP context if available
     researcher_prompt = research_system_prompt.format(
@@ -1031,12 +1033,12 @@ async def compress_research(state: ResearcherState, config: RunnableConfig):
     configurable = Configuration.from_runnable_config(config)
     logger.info("compress_research: entry, #researcher_messages=%d",
                 len(state.get("researcher_messages", [])))
-    synthesizer_model = configurable_model.with_config({
-        "model": configurable.compression_model,
-        "max_tokens": configurable.compression_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.compression_model, config),
-        "tags": ["langsmith:nostream"]
-    })
+    synthesizer_model = configurable_model.with_config(
+        build_model_config(
+            configurable, configurable.compression_model,
+            configurable.compression_model_max_tokens, config,
+        )
+    )
     
     # Step 2: Prepare messages for compression
     researcher_messages = state.get("researcher_messages", [])
@@ -1461,20 +1463,21 @@ async def write_section(
     """Write a single report section with evidence and citations using structured output."""
     configurable = Configuration.from_runnable_config(config)
     logger.info("write_section: entry, section=%.80s", section.get("title", ""))
-    writer_model_config = {
-        "model": configurable.final_report_model,
-        "max_tokens": configurable.final_report_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.final_report_model, config),
-        "tags": ["langsmith:nostream"],
-    }
-    routed_model, routed_key = _resolve_model_via_router(
+    resolved = _resolve_model_via_router(
         configurable, config, TaskType.REPORT_WRITING,
-        writer_model_config["model"],
+        configurable.final_report_model,
         complexity_hint=ModelTier.QUALITY,
     )
-    if routed_key:
-        writer_model_config["model"] = routed_model
-        writer_model_config["api_key"] = routed_key
+    if resolved is not None:
+        writer_model_config = build_model_config(
+            configurable, resolved.model_string,
+            configurable.final_report_model_max_tokens, config,
+        )
+    else:
+        writer_model_config = build_model_config(
+            configurable, configurable.final_report_model,
+            configurable.final_report_model_max_tokens, config,
+        )
     # Map section to best-matching subquestion using keyword overlap
     matched_sq = _map_section_to_subquestion(section, subquestions)
     evidence_allocation = section.get("evidence_allocation", {})
@@ -1817,20 +1820,21 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
     
     # Step 2: Configure the final report generation model
     configurable = Configuration.from_runnable_config(config)
-    writer_model_config = {
-        "model": configurable.final_report_model,
-        "max_tokens": configurable.final_report_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.final_report_model, config),
-        "tags": ["langsmith:nostream"]
-    }
-    routed_model, routed_key = _resolve_model_via_router(
+    resolved = _resolve_model_via_router(
         configurable, config, TaskType.REPORT_WRITING,
-        writer_model_config["model"],
+        configurable.final_report_model,
         complexity_hint=ModelTier.QUALITY,
     )
-    if routed_key:
-        writer_model_config["model"] = routed_model
-        writer_model_config["api_key"] = routed_key
+    if resolved is not None:
+        writer_model_config = build_model_config(
+            configurable, resolved.model_string,
+            configurable.final_report_model_max_tokens, config,
+        )
+    else:
+        writer_model_config = build_model_config(
+            configurable, configurable.final_report_model,
+            configurable.final_report_model_max_tokens, config,
+        )
     
     # Step 3: Attempt report generation with token limit retry logic
     max_retries = 3
