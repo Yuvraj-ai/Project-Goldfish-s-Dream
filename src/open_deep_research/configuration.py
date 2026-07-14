@@ -87,6 +87,109 @@ class ResolvedModel:
         )
 
 
+BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
+    "openai": ProviderConfig(
+        base_url="https://api.openai.com/v1",
+        default_model="gpt-4.1",
+        api_key_env="OPENAI_API_KEY",
+        allowed_models=[
+            "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
+            "gpt-4o", "gpt-4o-mini",
+            "o4-mini", "o3-mini", "o3", "o3-pro", "o1", "o1-pro",
+            "qwen2.5", "qwen3.6",
+        ],
+        model_token_limits={
+            "gpt-4.1": 1047576, "gpt-4.1-mini": 1047576, "gpt-4.1-nano": 1047576,
+            "gpt-4o": 128000, "gpt-4o-mini": 128000,
+            "o4-mini": 200000, "o3-mini": 200000, "o3": 200000,
+            "o3-pro": 200000, "o1": 200000, "o1-pro": 200000,
+            "qwen2.5": 32768, "qwen3.6": 32768,
+        },
+    ),
+    "anthropic": ProviderConfig(
+        base_url="https://api.anthropic.com",
+        default_model="claude-sonnet-4-20250514",
+        api_key_env="ANTHROPIC_API_KEY",
+        allowed_models=[
+            "claude-opus-4", "claude-sonnet-4-20250514",
+            "claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku",
+        ],
+        model_token_limits={
+            "claude-opus-4": 200000, "claude-sonnet-4-20250514": 200000,
+            "claude-3-7-sonnet": 200000, "claude-3-5-sonnet": 200000,
+            "claude-3-5-haiku": 200000,
+        },
+    ),
+    "google_genai": ProviderConfig(
+        base_url="https://generativelanguage.googleapis.com/v1beta",
+        default_model="gemini-2.5-flash",
+        aliases=["google"],
+        api_key_env="GOOGLE_API_KEY",
+        allowed_models=[
+            "gemini-2.5-pro", "gemini-2.5-flash",
+            "gemini-1.5-pro", "gemini-1.5-flash",
+        ],
+        model_token_limits={
+            "gemini-2.5-pro": 1048576, "gemini-2.5-flash": 1048576,
+            "gemini-1.5-pro": 2097152, "gemini-1.5-flash": 1048576,
+        },
+    ),
+    "bedrock": ProviderConfig(
+        base_url="",
+        default_model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        api_key_env="AWS_ACCESS_KEY_ID",
+        auth_strategy="aws",
+        allowed_models=[
+            "us.amazon.nova-premier-v1:0", "us.amazon.nova-pro-v1:0",
+            "us.amazon.nova-lite-v1:0", "us.amazon.nova-micro-v1:0",
+            "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "us.anthropic.claude-sonnet-4-20250514-v1:0",
+            "us.anthropic.claude-opus-4-20250514-v1:0",
+        ],
+        model_token_limits={
+            "us.amazon.nova-premier-v1:0": 1000000,
+            "us.amazon.nova-pro-v1:0": 300000,
+            "us.amazon.nova-lite-v1:0": 300000,
+            "us.amazon.nova-micro-v1:0": 128000,
+            "us.anthropic.claude-3-7-sonnet-20250219-v1:0": 200000,
+            "us.anthropic.claude-sonnet-4-20250514-v1:0": 200000,
+            "us.anthropic.claude-opus-4-20250514-v1:0": 200000,
+        },
+    ),
+    "cohere": ProviderConfig(
+        base_url="https://api.cohere.com/v1",
+        default_model="command-r-plus",
+        api_key_env="COHERE_API_KEY",
+        allowed_models=["command-r-plus", "command-r", "command-light", "command"],
+        model_token_limits={
+            "command-r-plus": 128000, "command-r": 128000,
+            "command-light": 4096, "command": 4096,
+        },
+    ),
+    "mistral": ProviderConfig(
+        base_url="https://api.mistral.ai/v1",
+        default_model="mistral-large",
+        api_key_env="MISTRAL_API_KEY",
+        allowed_models=["mistral-large", "mistral-medium", "mistral-small", "mistral-7b-instruct"],
+        model_token_limits={
+            "mistral-large": 32768, "mistral-medium": 32768,
+            "mistral-small": 32768, "mistral-7b-instruct": 32768,
+        },
+    ),
+    "ollama": ProviderConfig(
+        base_url="http://localhost:11434/v1",
+        default_model="llama2",
+        api_key_env="",
+        auth_strategy="none",
+        allowed_models=["codellama", "llama2:70b", "llama2:13b", "llama2", "mistral"],
+        model_token_limits={
+            "codellama": 16384, "llama2:70b": 4096,
+            "llama2:13b": 4096, "llama2": 4096, "mistral": 32768,
+        },
+    ),
+}
+
+
 class MCPConfig(BaseModel):
     """Configuration for Model Context Protocol (MCP) servers."""
     

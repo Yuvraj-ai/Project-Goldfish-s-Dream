@@ -43,3 +43,42 @@ def test_resolved_model_fields():
     )
     assert rm.provider == "openai"
     assert rm.base_url == "https://api.openai.com/v1"
+
+
+def test_builtin_providers_preserves_current_limits():
+    """BUILTIN_PROVIDERS contains all models from current MODEL_TOKEN_LIMITS."""
+    from open_deep_research.configuration import BUILTIN_PROVIDERS
+
+    # OpenAI models
+    assert "openai" in BUILTIN_PROVIDERS
+    assert BUILTIN_PROVIDERS["openai"].model_token_limits["gpt-4.1"] == 1047576
+    assert BUILTIN_PROVIDERS["openai"].model_token_limits["gpt-4o"] == 128000
+
+    # Anthropic models
+    assert "anthropic" in BUILTIN_PROVIDERS
+    assert BUILTIN_PROVIDERS["anthropic"].model_token_limits["claude-opus-4"] == 200000
+
+    # Google models (google_genai with alias google)
+    assert "google_genai" in BUILTIN_PROVIDERS
+    assert "google" in BUILTIN_PROVIDERS["google_genai"].aliases
+
+    # Bedrock
+    assert "bedrock" in BUILTIN_PROVIDERS
+    assert BUILTIN_PROVIDERS["bedrock"].auth_strategy == "aws"
+
+    # Ollama
+    assert "ollama" in BUILTIN_PROVIDERS
+    assert BUILTIN_PROVIDERS["ollama"].auth_strategy == "none"
+
+
+def test_builtin_providers_api_key_env():
+    """api_key_env is set correctly for each provider."""
+    from open_deep_research.configuration import BUILTIN_PROVIDERS
+
+    assert BUILTIN_PROVIDERS["openai"].api_key_env == "OPENAI_API_KEY"
+    assert BUILTIN_PROVIDERS["anthropic"].api_key_env == "ANTHROPIC_API_KEY"
+    assert BUILTIN_PROVIDERS["google_genai"].api_key_env == "GOOGLE_API_KEY"
+    assert BUILTIN_PROVIDERS["bedrock"].api_key_env == "AWS_ACCESS_KEY_ID"
+    assert BUILTIN_PROVIDERS["cohere"].api_key_env == "COHERE_API_KEY"
+    assert BUILTIN_PROVIDERS["mistral"].api_key_env == "MISTRAL_API_KEY"
+    assert BUILTIN_PROVIDERS["ollama"].api_key_env == ""
