@@ -263,3 +263,45 @@ def test_from_runnable_config_models_section():
         RunnableConfig(configurable={"models": {"research_model": "openai:gpt-4o"}})
     )
     assert config.models.research_model == "openai:gpt-4o"
+
+
+def test_resolve_model_known_provider():
+    """resolve_model resolves a known provider:model string."""
+    from open_deep_research.configuration import Configuration
+
+    config = Configuration.from_runnable_config(None)
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}):
+        resolved = config.resolve_model("openai:gpt-4.1", None)
+    assert resolved.provider == "openai"
+    assert resolved.model_name == "gpt-4.1"
+    assert resolved.base_url == "https://api.openai.com/v1"
+    assert resolved.token_limit == 1047576
+
+
+def test_resolve_model_alias():
+    """google:* resolves to google_genai:*."""
+    from open_deep_research.configuration import Configuration
+
+    config = Configuration.from_runnable_config(None)
+    with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+        resolved = config.resolve_model("google:gemini-2.5-flash", None)
+    assert resolved.provider == "google_genai"
+    assert resolved.canonical_model_string == "google_genai:gemini-2.5-flash"
+
+
+def test_resolve_model_unknown_raises():
+    """Unknown provider raises ValueError."""
+    from open_deep_research.configuration import Configuration
+
+    config = Configuration.from_runnable_config(None)
+    with pytest.raises(ValueError, match="Unknown provider"):
+        config.resolve_model("nonexistent:model", None)
+
+
+def test_resolve_model_disallowed_raises():
+    """Model not in allowed_models raises ValueError."""
+    from open_deep_research.configuration import Configuration
+
+    config = Configuration.from_runnable_config(None)
+    with pytest.raises(ValueError, match="not allowed"):
+        config.resolve_model("openai:gpt-3.5-turbo", None)

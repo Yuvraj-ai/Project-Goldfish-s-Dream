@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, List, Literal
 
 from langchain_core.runnables import RunnableConfig
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 
 class ResearchMode(str, Enum):
@@ -889,6 +889,87 @@ class Configuration(BaseModel):
         values["providers"] = registry
 
         return cls(**{k: v for k, v in values.items() if v is not None})
+
+    def _resolve_provider_alias(self, provider: str) -> str:
+        """Resolve provider alias (e.g., 'google' -> 'google_genai')."""
+        for pid, pc in self.providers.items():
+            if provider == pid:
+                return pid
+            if provider in pc.aliases:
+                return pid
+        return provider
+
+    def resolve_model(
+        self,
+        model_string: str,
+        runnable_config: RunnableConfig | None = None,
+    ) -> ResolvedModel:
+        """Resolve 'openai:gpt-4.1' -> ResolvedModel."""
+        provider, model_name = model_string.split(":", 1)
+        canonical_provider = self._resolve_provider_alias(provider)
+
+        provider_config = self.providers.get(canonical_provider)
+        if not provider_config:
+            available = list(self.providers.keys())
+            raise ValueError(
+                f"Unknown provider '{provider}' (canonical: '{canonical_provider}'). "
+                f"Available: {available}."
+            )
+
+        if provider_config.allowed_models and model_name not in provider_config.allowed_models:
+            raise ValueError(
+                f"Model '{model_name}' not allowed for {canonical_provider}. "
+                f"Allowed: {provider_config.allowed_models}"
+            )
+
+        api_key = self._resolve_api_key(canonical_provider, provider_config, runnable_config)
+        token_limit = provider_config.model_token_limits.get(model_name)
+
+        return ResolvedModel(
+            provider=canonical_provider,
+            model_string=model_string,
+            canonical_model_string=f"{canonical_provider}:{model_name}",
+            model_name=model_name,
+            base_url=provider_config.base_url,
+            api_key=api_key,
+            token_limit=token_limit,
+            provider_kwargs={},
+        )
+
+    def _resolve_api_key(
+        self,
+        provider: str,
+        provider_config: ProviderConfig,
+        runnable_config: RunnableConfig | None = None,
+    ) -> str:
+        """Resolve API key using provider's api_key_env, not derived from provider ID."""
+        if provider_config.auth_strategy == "none":
+            return ""
+
+        if runnable_config and os.getenv("GET_API_KEYS_FROM_CONFIG", "false").lower() == "true":
+            api_keys = runnable_config.get("configurable", {}).get("apiKeys", {})
+            if provider_config.api_key_env and api_keys.get(provider_config.api_key_env):
+                return api_keys[provider_config.api_key_env]
+            if api_keys.get(f"{provider}_api_key"):
+                return api_keys[f"{provider}_api_key"]
+
+        attr_name = f"{provider}_api_key"
+        api_key_secret: SecretStr | None = getattr(self, attr_name, None)
+        if api_key_secret:
+            return api_key_secret.get_secret_value()
+
+        if provider_config.api_key_env:
+            env_val = os.getenv(provider_config.api_key_env)
+            if env_val:
+                return env_val
+
+        if provider_config.auth_strategy == "aws":
+            return ""
+
+        raise ValueError(
+            f"No API key for provider '{provider}'. "
+            f"Set {provider_config.api_key_env} in .env or provide via config.apiKeys."
+        )
 
     class Config:
         """Pydantic configuration."""
