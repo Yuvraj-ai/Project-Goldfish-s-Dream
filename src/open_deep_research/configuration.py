@@ -352,6 +352,12 @@ class MCPConfig(BaseModel):
 class Configuration(BaseModel):
     """Main configuration class for the Deep Research agent."""
     
+    # Provider registry (merged from BUILTIN_PROVIDERS + config.json + runtime)
+    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+
+    # Model slot assignments (nested config for model routing)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
+
     # General Configuration
     max_structured_output_retries: int = Field(
         default=3,
@@ -818,16 +824,70 @@ class Configuration(BaseModel):
     )
 
     @classmethod
+    def _build_values(cls, config: RunnableConfig | None = None) -> dict[str, Any]:
+        """Build final config values with canonical precedence.
+
+        Priority (highest to lowest):
+        4. configurable dict (per-request / eval script)
+        3. OS environment variables
+        2. .env file
+        1. config.json
+        0. Built-in defaults (BUILTIN_PROVIDERS, field defaults)
+        """
+        configurable = config.get("configurable", {}) if config else {}
+
+        values: dict[str, Any] = {}
+
+        # 1. Layer config.json
+        json_config = _load_config_json()
+        for key in cls.model_fields:
+            if key in json_config:
+                values[key] = json_config[key]
+
+        # 2. Layer .env file
+        dotenv_values_dict = _load_dotenv()
+        for key in cls.model_fields:
+            if key in dotenv_values_dict:
+                values[key] = dotenv_values_dict[key]
+
+        # 3. Layer OS environment (wins over .env)
+        for key in cls.model_fields:
+            env_val = os.environ.get(key.upper())
+            if env_val is not None:
+                values[key] = env_val
+
+        # 4. Layer configurable dict (wins over everything)
+        # Migrate flat model keys to nested models section
+        migrated = _migrate_flat_keys(configurable)
+        for key, val in migrated.items():
+            if key in cls.model_fields:
+                values[key] = val
+            elif isinstance(val, dict):
+                # Nested dict (e.g., models) — merge into existing
+                if key in values and isinstance(values[key], dict):
+                    values[key].update(val)
+                else:
+                    values[key] = val
+
+        return values
+
+    @classmethod
     def from_runnable_config(
         cls, config: RunnableConfig | None = None
     ) -> "Configuration":
-        """Create a Configuration instance from a RunnableConfig."""
+        values = cls._build_values(config)
+
+        # Merge providers: BUILTIN < config.json < configurable (runtime)
+        json_providers = values.pop("providers", {})
         configurable = config.get("configurable", {}) if config else {}
-        field_names = list(cls.model_fields.keys())
-        values: dict[str, Any] = {
-            field_name: os.environ.get(field_name.upper(), configurable.get(field_name))
-            for field_name in field_names
-        }
+        runtime_providers = configurable.get("providers", {})
+
+        registry = build_provider_registry({"providers": json_providers})
+        if runtime_providers:
+            registry = build_provider_registry({"providers": runtime_providers}, registry)
+
+        values["providers"] = registry
+
         return cls(**{k: v for k, v in values.items() if v is not None})
 
     class Config:

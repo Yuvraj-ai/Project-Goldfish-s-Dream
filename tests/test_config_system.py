@@ -6,6 +6,7 @@ import tempfile
 from unittest.mock import patch
 
 import pytest
+from langchain_core.runnables import RunnableConfig
 
 
 def test_provider_config_defaults():
@@ -216,3 +217,49 @@ def test_migrate_flat_keys():
     assert migrated["models"]["research_model"] == "openai:gpt-4o"
     assert migrated["enable_section_writers"] is True  # non-flat key preserved
     assert "research_model" not in migrated  # flat key removed
+
+
+def test_precedence_configurable_wins_over_env():
+    """configurable dict wins over OS environment variables."""
+    from open_deep_research.configuration import Configuration
+
+    with patch.dict(os.environ, {"RESEARCH_MODEL": "openai:gpt-4o"}):
+        config = Configuration.from_runnable_config(
+            RunnableConfig(configurable={"models": {"research_model": "openai:gpt-4.1"}})
+        )
+    assert config.models.research_model == "openai:gpt-4.1"
+
+
+def test_precedence_env_wins_over_dotenv():
+    """OS env wins over .env file."""
+    from open_deep_research.configuration import Configuration
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+        f.write("RESEARCH_MODEL=openai:gpt-4o\n")
+        f.flush()
+        with patch.dict(os.environ, {"RESEARCH_MODEL": "openai:gpt-4.1"}):
+            with patch("open_deep_research.configuration._load_dotenv",
+                       return_value={"RESEARCH_MODEL": "openai:o3"}):
+                config = Configuration.from_runnable_config(None)
+    assert config.research_model == "openai:gpt-4.1"
+    os.unlink(f.name)
+
+
+def test_builtin_providers_fallback():
+    """No config.json = system works with BUILTIN_PROVIDERS."""
+    from open_deep_research.configuration import Configuration
+
+    with patch("open_deep_research.configuration._load_config_json", return_value={}):
+        config = Configuration.from_runnable_config(None)
+    assert "openai" in config.providers
+    assert config.providers["openai"].model_token_limits["gpt-4.1"] == 1047576
+
+
+def test_from_runnable_config_models_section():
+    """Models section in configurable maps to config.models."""
+    from open_deep_research.configuration import Configuration
+
+    config = Configuration.from_runnable_config(
+        RunnableConfig(configurable={"models": {"research_model": "openai:gpt-4o"}})
+    )
+    assert config.models.research_model == "openai:gpt-4o"
