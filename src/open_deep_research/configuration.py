@@ -37,7 +37,7 @@ class ProviderConfig(BaseModel):
     model_token_limits: dict[str, int] = {}
     aliases: list[str] = []
     api_key_env: str = ""           # env var name for this provider's key
-    auth_strategy: str = "api_key"  # "api_key" | "aws" | "none"
+    auth_strategy: Literal["api_key", "aws", "none"] = "api_key"
     rate_limit_rpm: int | None = None
     rate_limit_tpm: int | None = None
 
