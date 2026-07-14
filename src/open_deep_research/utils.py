@@ -854,22 +854,6 @@ def remove_up_to_last_ai_message(messages: list[MessageLikeRepresentation]) -> l
     logger.debug("No AI message found; returning message history unchanged")
     return messages
 
-def get_tavily_api_key(config: RunnableConfig):
-    """Get Tavily API key from environment or config."""
-    should_get_from_config = os.getenv("GET_API_KEYS_FROM_CONFIG", "false")
-    if should_get_from_config.lower() == "true":
-        api_keys = config.get("configurable", {}).get("apiKeys", {})
-        if not api_keys:
-            logger.warning("GET_API_KEYS_FROM_CONFIG set but no apiKeys in config for Tavily")
-            return None
-        if not api_keys.get("TAVILY_API_KEY"):
-            logger.warning("No TAVILY_API_KEY available in config")
-        return api_keys.get("TAVILY_API_KEY")
-    else:
-        if not os.getenv("TAVILY_API_KEY"):
-            logger.warning("No TAVILY_API_KEY available in environment")
-        return os.getenv("TAVILY_API_KEY")
-
 ##########################
 # Misc Utils
 ##########################
