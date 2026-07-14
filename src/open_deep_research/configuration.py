@@ -312,6 +312,24 @@ def redact_secrets(config: dict) -> dict:
     return redacted
 
 
+_FLAT_TO_NESTED = {
+    "research_model": ("models", "research_model"),
+    "summarization_model": ("models", "summarization_model"),
+    "compression_model": ("models", "compression_model"),
+    "final_report_model": ("models", "final_report_model"),
+    "classifier_model": ("models", "classifier_model"),
+}
+
+
+def _migrate_flat_keys(configurable: dict) -> dict:
+    """Migrate flat model keys to nested models section."""
+    migrated = dict(configurable)
+    for flat_key, (section, field) in _FLAT_TO_NESTED.items():
+        if flat_key in migrated:
+            migrated.setdefault(section, {})[field] = migrated.pop(flat_key)
+    return migrated
+
+
 class MCPConfig(BaseModel):
     """Configuration for Model Context Protocol (MCP) servers."""
     

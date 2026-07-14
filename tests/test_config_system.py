@@ -205,3 +205,14 @@ def test_redact_secrets_nested_api_keys():
     assert redacted["apiKeys"]["ANTHROPIC_API_KEY"] == "***REDACTED***"
     assert redacted["max_total_tokens"] == 500000  # NOT redacted
     assert redacted["research_model"] == "openai:gpt-4.1"  # NOT redacted
+
+
+def test_migrate_flat_keys():
+    """Flat keys like research_model map to models.research_model."""
+    from open_deep_research.configuration import _migrate_flat_keys
+
+    flat = {"research_model": "openai:gpt-4o", "enable_section_writers": True}
+    migrated = _migrate_flat_keys(flat)
+    assert migrated["models"]["research_model"] == "openai:gpt-4o"
+    assert migrated["enable_section_writers"] is True  # non-flat key preserved
+    assert "research_model" not in migrated  # flat key removed
