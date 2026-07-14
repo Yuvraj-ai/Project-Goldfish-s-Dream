@@ -29,6 +29,64 @@ class SearchAPI(Enum):
     TAVILY = "tavily"
     NONE = "none"
 
+class ProviderConfig(BaseModel):
+    """Configuration for a single LLM provider."""
+    base_url: str = ""
+    default_model: str = ""
+    allowed_models: list[str] = []
+    model_token_limits: dict[str, int] = {}
+    aliases: list[str] = []
+    api_key_env: str = ""           # env var name for this provider's key
+    auth_strategy: str = "api_key"  # "api_key" | "aws" | "none"
+    rate_limit_rpm: int | None = None
+    rate_limit_tpm: int | None = None
+
+
+class ModelsConfig(BaseModel):
+    """Model slot assignments."""
+    research_model: str = "openai:gpt-4.1"
+    summarization_model: str = "openai:gpt-4.1-mini"
+    compression_model: str = "openai:gpt-4.1"
+    final_report_model: str = "openai:gpt-4.1"
+    classifier_model: str | None = None
+
+
+class ResolvedModel:
+    """Result of model resolution — carries everything needed to create a model client."""
+    __slots__ = (
+        "provider", "model_string", "canonical_model_string",
+        "model_name", "base_url", "api_key", "token_limit", "provider_kwargs",
+    )
+
+    def __init__(
+        self,
+        provider: str,
+        model_string: str,
+        canonical_model_string: str,
+        model_name: str,
+        base_url: str,
+        api_key: str,
+        token_limit: int | None,
+        provider_kwargs: dict,
+    ):
+        """Initialize ResolvedModel with provider connection details."""
+        self.provider = provider
+        self.model_string = model_string
+        self.canonical_model_string = canonical_model_string
+        self.model_name = model_name
+        self.base_url = base_url
+        self.api_key = api_key
+        self.token_limit = token_limit
+        self.provider_kwargs = provider_kwargs
+
+    def __repr__(self) -> str:
+        """Return concise string representation with key fields."""
+        return (
+            f"ResolvedModel(provider={self.provider!r}, "
+            f"model_name={self.model_name!r}, base_url={self.base_url!r})"
+        )
+
+
 class MCPConfig(BaseModel):
     """Configuration for Model Context Protocol (MCP) servers."""
     
