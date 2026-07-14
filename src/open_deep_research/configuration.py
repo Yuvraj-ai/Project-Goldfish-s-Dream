@@ -975,3 +975,23 @@ class Configuration(BaseModel):
         """Pydantic configuration."""
         
         arbitrary_types_allowed = True
+
+
+def build_model_config(
+    configurable: Configuration,
+    model_string: str,
+    max_tokens: int,
+    runnable_config: RunnableConfig | None = None,
+) -> dict:
+    """Build a model config dict for init_chat_model() from a ResolvedModel."""
+    resolved = configurable.resolve_model(model_string, runnable_config)
+    config = {
+        "model": resolved.canonical_model_string,
+        "max_tokens": max_tokens,
+        "api_key": resolved.api_key,
+        "tags": ["langsmith:nostream"],
+    }
+    if resolved.base_url:
+        config["base_url"] = resolved.base_url
+    config.update(resolved.provider_kwargs)
+    return config

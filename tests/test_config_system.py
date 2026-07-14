@@ -305,3 +305,26 @@ def test_resolve_model_disallowed_raises():
     config = Configuration.from_runnable_config(None)
     with pytest.raises(ValueError, match="not allowed"):
         config.resolve_model("openai:gpt-3.5-turbo", None)
+
+
+def test_build_model_config_returns_dict():
+    """build_model_config returns a dict for init_chat_model()."""
+    from open_deep_research.configuration import Configuration, build_model_config
+
+    config = Configuration.from_runnable_config(None)
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}):
+        result = build_model_config(config, "openai:gpt-4.1", 10000, None)
+    assert result["model"] == "openai:gpt-4.1"
+    assert result["max_tokens"] == 10000
+    assert "base_url" in result
+    assert "tags" in result
+
+
+def test_build_model_config_includes_base_url():
+    """build_model_config includes base_url when provider has one."""
+    from open_deep_research.configuration import Configuration, build_model_config
+
+    config = Configuration.from_runnable_config(None)
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}):
+        result = build_model_config(config, "openai:gpt-4.1", 10000, None)
+    assert result["base_url"] == "https://api.openai.com/v1"
