@@ -82,3 +82,51 @@ def test_builtin_providers_api_key_env():
     assert BUILTIN_PROVIDERS["cohere"].api_key_env == "COHERE_API_KEY"
     assert BUILTIN_PROVIDERS["mistral"].api_key_env == "MISTRAL_API_KEY"
     assert BUILTIN_PROVIDERS["ollama"].api_key_env == ""
+
+
+def test_build_provider_registry_unknown_provider_added():
+    """Unknown provider in config.json is added to registry."""
+    from open_deep_research.configuration import build_provider_registry
+
+    registry = build_provider_registry({
+        "providers": {
+            "my_custom": {
+                "base_url": "https://custom.api.com",
+                "api_key_env": "CUSTOM_API_KEY",
+            }
+        }
+    })
+    assert "my_custom" in registry
+    assert registry["my_custom"].base_url == "https://custom.api.com"
+
+
+def test_build_provider_registry_known_provider_union():
+    """Known provider: allowed_models unions, model_token_limits merges."""
+    from open_deep_research.configuration import build_provider_registry
+
+    registry = build_provider_registry({
+        "providers": {
+            "openai": {
+                "allowed_models": ["mimo-v2.5"],
+                "model_token_limits": {"mimo-v2.5": 32768},
+            }
+        }
+    })
+    # Original models preserved
+    assert "gpt-4.1" in registry["openai"].allowed_models
+    # New model added (union)
+    assert "mimo-v2.5" in registry["openai"].allowed_models
+    # Original limits preserved
+    assert registry["openai"].model_token_limits["gpt-4.1"] == 1047576
+    # New limit added
+    assert registry["openai"].model_token_limits["mimo-v2.5"] == 32768
+
+
+def test_build_provider_registry_preserves_builtins():
+    """Providers not in config.json are preserved unchanged."""
+    from open_deep_research.configuration import build_provider_registry
+
+    registry = build_provider_registry({"providers": {}})
+    assert "openai" in registry
+    assert "anthropic" in registry
+    assert "google_genai" in registry

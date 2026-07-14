@@ -1,5 +1,6 @@
 """Configuration management for the Open Deep Research system."""
 
+import copy
 import os
 from enum import Enum
 from typing import Any, List, Literal
@@ -188,6 +189,49 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
         },
     ),
 }
+
+
+def build_provider_registry(
+    config_json: dict[str, Any],
+    builtin: dict[str, ProviderConfig] | None = None,
+) -> dict[str, ProviderConfig]:
+    """Merge config.json providers into built-in registry.
+
+    Rules:
+    - Unknown providers are added to the registry.
+    - Known providers are deep-merged: scalar fields override, lists are unioned
+      (allowed_models) or replaced (model_token_limits).
+    - Built-in entries not present in config.json are preserved unchanged.
+    """
+    registry = copy.deepcopy(builtin or BUILTIN_PROVIDERS)
+
+    for provider_id, overrides in config_json.get("providers", {}).items():
+        if provider_id not in registry:
+            registry[provider_id] = ProviderConfig(**overrides)
+        else:
+            existing = registry[provider_id]
+            merged = existing.model_dump()
+
+            for key, value in overrides.items():
+                if key == "allowed_models" and isinstance(value, list):
+                    merged["allowed_models"] = list(
+                        dict.fromkeys(merged.get("allowed_models", []) + value)
+                    )
+                elif key == "model_token_limits" and isinstance(value, dict):
+                    merged["model_token_limits"] = {
+                        **merged.get("model_token_limits", {}),
+                        **value,
+                    }
+                elif key == "aliases" and isinstance(value, list):
+                    merged["aliases"] = list(
+                        dict.fromkeys(merged.get("aliases", []) + value)
+                    )
+                else:
+                    merged[key] = value
+
+            registry[provider_id] = ProviderConfig(**merged)
+
+    return registry
 
 
 class MCPConfig(BaseModel):
