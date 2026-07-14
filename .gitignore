@@ -68,3 +68,4 @@ tmp/
 temp/
 
 .langgraph_api
+.worktrees
