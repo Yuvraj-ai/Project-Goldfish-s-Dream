@@ -342,14 +342,17 @@ def _build_values(cls, config: RunnableConfig | None = None) -> dict[str, Any]:
 def from_runnable_config(cls, config: RunnableConfig | None = None) -> "Configuration":
     values = cls._build_values(config)
 
-    # Merge providers: BUILTIN_PROVIDERS < config.json < configurable
-    config_providers = values.pop("providers", {})
-    registry = build_provider_registry({"providers": config_providers})
-
-    # Also check configurable for provider overrides
+    # Merge providers: BUILTIN < config.json < configurable (runtime)
+    # Load each layer separately to avoid losing earlier layers
+    json_providers = values.pop("providers", {})
     configurable = config.get("configurable", {}) if config else {}
-    if "providers" in configurable:
-        registry = build_provider_registry({"providers": configurable["providers"]}, registry)
+    runtime_providers = configurable.get("providers", {})
+
+    # Layer 1: built-in < config.json
+    registry = build_provider_registry({"providers": json_providers})
+    # Layer 2: result < runtime overrides
+    if runtime_providers:
+        registry = build_provider_registry({"providers": runtime_providers}, registry)
 
     values["providers"] = registry
 
@@ -536,15 +539,35 @@ model_config = build_model_config(configurable, resolved.model_string,
 ### 9. Secret Redaction for API Persistence
 
 ```python
-_SECRET_PATTERNS = re.compile(
-    r"(api_key|secret|token|password|authorization)", re.IGNORECASE
-)
+# Match specific secret field names, not generic words like "token" in "max_tokens"
+_SECRET_KEY_EXACT = {
+    "openai_api_key", "anthropic_api_key", "google_api_key",
+    "tavily_api_key", "cohere_api_key", "mistral_api_key",
+    "ollama_api_key", "bedrock_api_key", "bedrock_secret_key",
+    "bedrock_session_token",
+}
+_SECRET_KEY_SUFFIXES = ("_api_key", "_secret", "_secret_key", "_session_token")
+_SECRET_KEY_EXACT_LOWER = {k.lower() for k in _SECRET_KEY_EXACT}
+
+def _is_secret_key(key: str) -> bool:
+    """Check if a key name refers to a secret field."""
+    low = key.lower()
+    if low in _SECRET_KEY_EXACT_LOWER:
+        return True
+    if low in _SECRET_KEY_EXACT:
+        return True
+    return any(low.endswith(s) for s in _SECRET_KEY_SUFFIXES)
 
 def redact_secrets(config: dict) -> dict:
-    """Redact all secret fields from config before storage."""
+    """Redact secret fields from config before storage.
+
+    Recurses into nested dicts (including apiKeys) and lists of dicts.
+    Only matches known secret key patterns -- does not touch fields like
+    max_total_tokens or research_model_max_tokens.
+    """
     redacted = {}
     for key, value in config.items():
-        if _SECRET_PATTERNS.search(key):
+        if _is_secret_key(key):
             redacted[key] = "***REDACTED***" if value else None
         elif isinstance(value, dict):
             redacted[key] = redact_secrets(value)
@@ -558,18 +581,18 @@ def redact_secrets(config: dict) -> dict:
 **Two separate objects in the runner:**
 
 ```python
-# In runner.py
+# In runner.py:34 (ResearchRunner.start)
 runtime_config = {
     "configurable": {
         "repo": repo,
         "run_id": run_id,
-        **body.config,  # Contains secrets for this run
+        **config,  # Contains secrets for this run
     }
 }
 
-# Persist redacted version to SQLite
-persisted_config = redact_secrets(body.config)
-await repo.create_run(run_id, query, persisted_config)
+# Persist redacted version to SQLite (before passing to graph)
+persisted_config = redact_secrets(config)
+await repo.create_run(run_id, query, persisted_config, idempotency_key)
 ```
 
 ### 10. Config File Resolution
