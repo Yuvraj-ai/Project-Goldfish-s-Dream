@@ -170,3 +170,38 @@ def test_load_config_json_env_var_missing_raises():
     with patch.dict(os.environ, {"ODR_CONFIG_FILE": "/nonexistent/config.json"}):
         with pytest.raises(FileNotFoundError, match="ODR_CONFIG_FILE"):
             _load_config_json()
+
+
+def test_is_secret_key_matches_known_names():
+    """_is_secret_key matches known secret field names."""
+    from open_deep_research.configuration import _is_secret_key
+
+    assert _is_secret_key("openai_api_key")
+    assert _is_secret_key("OPENAI_API_KEY")
+    assert _is_secret_key("anthropic_api_key")
+    assert _is_secret_key("bedrock_secret_key")
+    assert _is_secret_key("bedrock_session_token")
+    assert not _is_secret_key("max_total_tokens")
+    assert not _is_secret_key("research_model_max_tokens")
+    assert not _is_secret_key("research_model")
+
+
+def test_redact_secrets_nested_api_keys():
+    """redact_secrets recurses into nested apiKeys dict."""
+    from open_deep_research.configuration import redact_secrets
+
+    config = {
+        "openai_api_key": "sk-secret",
+        "apiKeys": {
+            "OPENAI_API_KEY": "sk-secret",
+            "ANTHROPIC_API_KEY": "sk-ant",
+        },
+        "max_total_tokens": 500000,
+        "research_model": "openai:gpt-4.1",
+    }
+    redacted = redact_secrets(config)
+    assert redacted["openai_api_key"] == "***REDACTED***"
+    assert redacted["apiKeys"]["OPENAI_API_KEY"] == "***REDACTED***"
+    assert redacted["apiKeys"]["ANTHROPIC_API_KEY"] == "***REDACTED***"
+    assert redacted["max_total_tokens"] == 500000  # NOT redacted
+    assert redacted["research_model"] == "openai:gpt-4.1"  # NOT redacted

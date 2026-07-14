@@ -272,6 +272,46 @@ def _load_dotenv() -> dict:
         return {}
 
 
+_SECRET_KEY_EXACT = {
+    "openai_api_key", "anthropic_api_key", "google_api_key",
+    "tavily_api_key", "cohere_api_key", "mistral_api_key",
+    "ollama_api_key", "bedrock_api_key", "bedrock_secret_key",
+    "bedrock_session_token",
+}
+_SECRET_KEY_SUFFIXES = ("_api_key", "_secret", "_secret_key", "_session_token")
+_SECRET_KEY_EXACT_LOWER = {k.lower() for k in _SECRET_KEY_EXACT}
+
+
+def _is_secret_key(key: str) -> bool:
+    """Check if a key name refers to a secret field."""
+    low = key.lower()
+    if low in _SECRET_KEY_EXACT_LOWER:
+        return True
+    if low in _SECRET_KEY_EXACT:
+        return True
+    return any(low.endswith(s) for s in _SECRET_KEY_SUFFIXES)
+
+
+def redact_secrets(config: dict) -> dict:
+    """Redact secret fields from config before storage.
+
+    Recurses into nested dicts (including apiKeys) and lists of dicts.
+    Only matches known secret key patterns — does not touch fields like
+    max_total_tokens or research_model_max_tokens.
+    """
+    redacted = {}
+    for key, value in config.items():
+        if _is_secret_key(key):
+            redacted[key] = "***REDACTED***" if value else None
+        elif isinstance(value, dict):
+            redacted[key] = redact_secrets(value)
+        elif isinstance(value, list):
+            redacted[key] = [redact_secrets(v) if isinstance(v, dict) else v for v in value]
+        else:
+            redacted[key] = value
+    return redacted
+
+
 class MCPConfig(BaseModel):
     """Configuration for Model Context Protocol (MCP) servers."""
     
