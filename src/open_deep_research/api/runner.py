@@ -7,6 +7,7 @@ from typing import Any
 
 from open_deep_research.api.models import ProgressEvent
 from open_deep_research.api.repository import ResearchRepository
+from open_deep_research.configuration import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class ResearchRunner:
         if cls._semaphore is None or cls._semaphore._value != max_concurrent:
             cls._semaphore = asyncio.Semaphore(max_concurrent)
 
-        run_id = await repo.create_run(query, config, idempotency_key)
+        run_id = await repo.create_run(query, redact_secrets(config), idempotency_key)
         logger.info(
             "Research run %s created (mode=%s, max_concurrent=%s, query=%.80s)",
             run_id, config.get("mode"), max_concurrent, query,
