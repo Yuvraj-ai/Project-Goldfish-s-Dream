@@ -1,5 +1,12 @@
 """Tests for the new provider-aware config system."""
 
+import json
+import os
+import tempfile
+from unittest.mock import patch
+
+import pytest
+
 
 def test_provider_config_defaults():
     """ProviderConfig has sensible defaults."""
@@ -130,3 +137,36 @@ def test_build_provider_registry_preserves_builtins():
     assert "openai" in registry
     assert "anthropic" in registry
     assert "google_genai" in registry
+
+
+def test_load_config_json_missing_file_returns_empty():
+    """Missing config.json returns empty dict."""
+    from open_deep_research.configuration import _load_config_json
+
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("pathlib.Path.exists", return_value=False):
+            result = _load_config_json()
+            assert result == {}
+
+
+def test_load_config_json_env_var():
+    """ODR_CONFIG_FILE env var loads specified path."""
+    from open_deep_research.configuration import _load_config_json
+
+    config_data = {"providers": {"openai": {"allowed_models": ["test-model"]}}}
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(config_data, f)
+        f.flush()
+        with patch.dict(os.environ, {"ODR_CONFIG_FILE": f.name}):
+            result = _load_config_json()
+            assert result == config_data
+    os.unlink(f.name)
+
+
+def test_load_config_json_env_var_missing_raises():
+    """ODR_CONFIG_FILE pointing to missing file raises error."""
+    from open_deep_research.configuration import _load_config_json
+
+    with patch.dict(os.environ, {"ODR_CONFIG_FILE": "/nonexistent/config.json"}):
+        with pytest.raises(FileNotFoundError, match="ODR_CONFIG_FILE"):
+            _load_config_json()

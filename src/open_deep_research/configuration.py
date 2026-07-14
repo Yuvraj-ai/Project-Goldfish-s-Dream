@@ -1,8 +1,10 @@
 """Configuration management for the Open Deep Research system."""
 
 import copy
+import json
 import os
 from enum import Enum
+from pathlib import Path
 from typing import Any, List, Literal
 
 from langchain_core.runnables import RunnableConfig
@@ -232,6 +234,42 @@ def build_provider_registry(
             registry[provider_id] = ProviderConfig(**merged)
 
     return registry
+
+
+def _load_config_json() -> dict:
+    """Load config.json with deterministic path resolution.
+
+    Resolution order:
+    1. ODR_CONFIG_FILE env var (explicit path)
+    2. Package-relative: <package_root>/config.json (source checkout)
+    3. Empty dict (no config.json = use built-in defaults)
+
+    If ODR_CONFIG_FILE is set but malformed, raise an error (not silent fallback).
+    """
+    env_path = os.getenv("ODR_CONFIG_FILE")
+    if env_path:
+        path = Path(env_path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"ODR_CONFIG_FILE={env_path} specified but file not found"
+            )
+        return json.loads(path.read_text())
+
+    package_root = Path(__file__).resolve().parent.parent.parent
+    path = package_root / "config.json"
+    if path.exists():
+        return json.loads(path.read_text())
+
+    return {}
+
+
+def _load_dotenv() -> dict:
+    """Load .env file values as a flat dict."""
+    try:
+        from dotenv import dotenv_values
+        return dotenv_values() or {}
+    except ImportError:
+        return {}
 
 
 class MCPConfig(BaseModel):
