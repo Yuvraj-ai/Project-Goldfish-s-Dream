@@ -26,6 +26,8 @@ from open_deep_research.api.models import ProgressEvent
 from open_deep_research.citation_verifier import CitationVerifier
 from open_deep_research.configuration import (
     Configuration,
+    ResolvedModel,
+    build_model_config,
 )
 from open_deep_research.evidence import (
     compress_evidence,
@@ -124,10 +126,11 @@ def _resolve_model_via_router(
     current_model: str,
     input_length: int = 0,
     complexity_hint: ModelTier | None = None,
-) -> tuple[str, str | None]:
-    """Resolve model and api_key using router if enabled, fallback to current."""
+) -> "ResolvedModel | None":
+    """Resolve model via router. Returns ResolvedModel or None (fallback to current)."""
     if not configurable.enable_model_routing:
-        return current_model, None
+        return None
+
     router = get_model_router()
     result = router.select_with_tier_if_enabled(
         task_type=task_type,
@@ -137,14 +140,16 @@ def _resolve_model_via_router(
     )
     if result is None:
         logger.debug("model router returned no selection for task=%s, using current=%s", task_type, current_model)
-        return current_model, None
-    routed_model, _ = result
-    routed_key = get_api_key_for_model(routed_model, config)
-    if not routed_key:
-        logger.debug("no api key for routed model=%s, falling back to current=%s", routed_model, current_model)
-        return current_model, None
-    logger.debug("routed task=%s to model=%s (from %s)", task_type, routed_model, current_model)
-    return routed_model, routed_key
+        return None
+
+    routed_model_string, _ = result
+
+    try:
+        resolved = configurable.resolve_model(routed_model_string, config)
+        return resolved
+    except ValueError:
+        logger.debug("could not resolve routed model=%s, falling back to current=%s", routed_model_string, current_model)
+        return None
 
 # Initialize a configurable model that we will use throughout the agent
 configurable_model = init_chat_model(
