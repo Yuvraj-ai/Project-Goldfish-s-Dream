@@ -146,7 +146,7 @@ Verified manually on 2026-06-23. PDF and DOCX export work correctly for sample r
 | # | Bug | File | Fix |
 |---|-----|------|-----|
 | 1 | `"alive"` not in `CitationCheck.status` Literal | `deep_researcher.py` | Map `"alive"` → `"verified"` before Pydantic validation |
-| 2 | `max_researcher_iterations=1` → 0 sources | `run_domain_diversity.py` | Increased to `3` |
+| 2 | `max_researcher_iterations=1` → 0 sources | `scripts/run_domain_diversity.py` | Increased to `3` |
 | 3 | `PlanResult` Pydantic rejects string instead of list | `prompts.py` | Added `field_validator` for `subquestions`, `search_strategy`, etc. |
 | 4 | `SectionOutput.citation_ids` rejects `null` | `deep_researcher.py` | Added `field_validator` to coerce `None` → `[]` |
 | 5 | `extract_structured_evidence` uses sparse `raw_notes` field | `deep_researcher.py` | Rewrote to parse tool-message content with regex |

@@ -859,6 +859,12 @@ class Configuration(BaseModel):
         # 4. Layer configurable dict (wins over everything)
         # Migrate flat model keys to nested models section
         migrated = _migrate_flat_keys(configurable)
+
+        # First, copy flat model keys to direct fields (before migration consumes them)
+        for flat_key in _FLAT_TO_NESTED:
+            if flat_key in configurable and flat_key in cls.model_fields:
+                values[flat_key] = configurable[flat_key]
+
         for key, val in migrated.items():
             if key in cls.model_fields:
                 values[key] = val

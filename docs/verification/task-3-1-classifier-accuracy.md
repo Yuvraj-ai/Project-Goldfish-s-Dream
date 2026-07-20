@@ -57,5 +57,5 @@
 ```bash
 cd open_deep_research
 OPENAI_API_KEY=... OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
-  .venv/bin/python run_classifier.py
+  .venv/bin/python scripts/run_classifier.py
 ```

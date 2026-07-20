@@ -6,11 +6,11 @@ toggling ONE feature flag at a time, then prints the state slice that feature is
 supposed to populate plus a short report snippet.
 
 Usage:
-    .venv/bin/python smoke_features.py --list
-    .venv/bin/python smoke_features.py base
-    .venv/bin/python smoke_features.py evidence_first
-    .venv/bin/python smoke_features.py all          # run every feature in order
-    .venv/bin/python smoke_features.py base --query "What is LangGraph?"
+    .venv/bin/python scripts/smoke_features.py --list
+    .venv/bin/python scripts/smoke_features.py base
+    .venv/bin/python scripts/smoke_features.py evidence_first
+    .venv/bin/python scripts/smoke_features.py all          # run every feature in order
+    .venv/bin/python scripts/smoke_features.py base --query "What is LangGraph?"
 """
 from __future__ import annotations
 
