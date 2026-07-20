@@ -1,5 +1,10 @@
 research_output/
 
+# Database
+research.db
+research.db-shm
+research.db-wal
+
 *.egg-info
 *.pyc
 
